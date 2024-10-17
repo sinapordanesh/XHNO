@@ -39,6 +39,40 @@ if not os.path.exists(save_results_to):
 # ====================================
 #  Laplace layer: pole-residue operation is used to calculate the poles and residues of the output
 # ====================================
+
+class SpectralConv1d(nn.Module):
+    def __init__(self, in_channels, out_channels, modes1):
+        super(SpectralConv1d, self).__init__()
+
+        """
+        1D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
+        """
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.modes1 = modes1  #Number of Fourier modes to multiply, at most floor(N/2) + 1
+
+        self.scale = (1 / (in_channels*out_channels))
+        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, dtype=torch.cfloat))
+
+    # Complex multiplication
+    def compl_mul1d(self, input, weights):
+        # (batch, in_channel, x ), (in_channel, out_channel, x) -> (batch, out_channel, x)
+        return torch.einsum("bix,iox->box", input, weights)
+
+    def forward(self, x):
+        batchsize = x.shape[0]
+        #Compute Fourier coeffcients up to factor of e^(- something constant)
+        x_ft = torch.fft.rfft(x)
+
+        # Multiply relevant Fourier modes
+        out_ft = torch.zeros(batchsize, self.out_channels, x.size(-1)//2 + 1,  device=x.device, dtype=torch.cfloat)
+        out_ft[:, :, :self.modes1] = self.compl_mul1d(x_ft[:, :, :self.modes1], self.weights1)
+
+        #Return to physical space
+        x = torch.fft.irfft(out_ft, n=x.size(-1))
+        return x
+
 class PR(nn.Module):
     def __init__(self, in_channels, out_channels, modes1):
         super(PR, self).__init__()
@@ -87,7 +121,8 @@ class LNO1d(nn.Module):
         self.modes1 = modes
         self.fc0 = nn.Linear(1, self.width) 
 
-        self.conv0 = PR(self.width, self.width, self.modes1)
+        self.lconv0 = PR(self.width, self.width, self.modes1)
+        self.fconv0 = SpectralConv1d(self.width, self.width, self.modes1)
         self.w0 = nn.Conv1d(self.width, self.width, 1)
 
         self.fc1 = nn.Linear(self.width, 128)
@@ -99,9 +134,11 @@ class LNO1d(nn.Module):
         x = self.fc0(x)
         x = x.permute(0, 2, 1)
 
-        x1 = self.conv0(x)
-        x2 = self.w0(x)
-        x = x1 +x2
+        x1 = self.lconv0(x)
+        x2 = self.fconv0(x)
+        x3 = self.w0(x)
+        
+        x = x1 + x2 + x3
 
         x = x.permute(0, 2, 1)
         x = self.fc1(x)
