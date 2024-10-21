@@ -122,6 +122,7 @@ class LNO1d(nn.Module):
         self.fc0 = nn.Linear(1, self.width) 
 
         self.lconv0 = PR(self.width, self.width, self.modes1)
+        # Fourier layer
         self.fconv0 = SpectralConv1d(self.width, self.width, self.modes1)
         self.w0 = nn.Conv1d(self.width, self.width, 1)
 
