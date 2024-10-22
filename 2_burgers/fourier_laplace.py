@@ -231,27 +231,31 @@ class LNO2d(nn.Module):
         f2 = self.fc2(f)
         f2 = f2.permute(0, 3, 1, 2)
         x2 = self.norm2(self.conv_s0(self.norm2(f2)))
-        x23=x2
-        x23 =  torch.sin(x23)
+        x4 = self.conv_f0(f) #Fourier layer
+        x234 = x2 + x4
+        x234 = torch.sin(x234)
 
-        x2 = self.norm2(self.conv_s1(self.norm2(x23)))
-        x3 = self.w1(x23)
-        x23=x2+x3
-        x23 =  torch.sin(x23)
+        x2 = self.norm2(self.conv_s1(self.norm2(x234)))
+        x3 = self.w1(x234)
+        x4 = self.conv_f1(x234) #Fourier layer
+        x234 = x2 + x3 + x4
+        x234 = torch.sin(x234)
 
-        x2 = self.norm2(self.conv_s2(self.norm2(x23)))
-        x3 = self.w2(x23)
-        x23=x2+x3
-        x23 =  torch.sin(x23)
+        x2 = self.norm2(self.conv_s2(self.norm2(x234)))
+        x3 = self.w2(x234)
+        x4 = self.conv_f2(x234)
+        x234= x2 + x3 + x4
+        x234 = torch.sin(x234)
 
-        x2 = self.norm2(self.conv_s3(self.norm2(x23)))
-        x3 = self.w3(x23)
-        x23=x2+x3
+        x2 = self.norm2(self.conv_s3(self.norm2(x234)))
+        x3 = self.w3(x234)
+        x4 = self.conv_f3(x234)
+        x234 = x2 + x3 + x4
 
-        x23 = x23.permute(0, 2, 3, 1)
-        x23 = self.fc5(x23)
-        x23 =  torch.sin(x23)
-        x23 = self.fc8(x23)
+        x234 = x234.permute(0, 2, 3, 1)
+        x234 = self.fc5(x234)
+        x234 =  torch.sin(x234)
+        x234 = self.fc8(x234)
 
         # # # Transient part+W part
         # f1 = self.fc1(f)
@@ -292,7 +296,7 @@ class LNO2d(nn.Module):
         # x3 = self.fc7(x3)
 
         #return x23
-        return x1+x23
+        return x1 + x234
 
     def get_grid(self, shape, device):
         batchsize, size_x, size_y = shape[0], shape[1], shape[2]
