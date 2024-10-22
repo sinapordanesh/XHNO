@@ -116,10 +116,50 @@ class Steady(nn.Module):
         x2=x2/x.size(-1)/x.size(-2)
         return x2
 
+class SpectralConv2d_fast(nn.Module):
+    def __init__(self, in_channels, out_channels, modes1, modes2):
+        super(SpectralConv2d_fast, self).__init__()
+
+        """
+        2D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
+        """
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.modes1 = modes1 #Number of Fourier modes to multiply, at most floor(N/2) + 1
+        self.modes2 = modes2
+
+        self.scale = (1 / (in_channels * out_channels))
+        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat))
+        self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat))
+
+    # Complex multiplication
+    def compl_mul2d(self, input, weights):
+        # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
+        return torch.einsum("bixy,ioxy->boxy", input, weights)
+
+    def forward(self, x):
+        batchsize = x.shape[0]
+        #Compute Fourier coeffcients up to factor of e^(- something constant)
+        x_ft = torch.fft.rfft2(x)
+
+        # Multiply relevant Fourier modes
+        out_ft = torch.zeros(batchsize, self.out_channels,  x.size(-2), x.size(-1)//2 + 1, dtype=torch.cfloat, device=x.device)
+        out_ft[:, :, :self.modes1, :self.modes2] = \
+            self.compl_mul2d(x_ft[:, :, :self.modes1, :self.modes2], self.weights1)
+        out_ft[:, :, -self.modes1:, :self.modes2] = \
+            self.compl_mul2d(x_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
+
+        #Return to physical space
+        x = torch.fft.irfft2(out_ft, s=(x.size(-2), x.size(-1)))
+        return x
+
+
 class LNO2d(nn.Module):
-    def __init__(self, width1,width2,width3,modes11,modes12,modes21,modes22):
+    def __init__(self, width1,width2,width3,modes11,modes12,modes21,modes22, widthF, modesF1, modesF2):
         super(LNO2d, self).__init__()
 
+        # Laplace part
         self.width1 = width1
         self.width2 = width2
         self.width3 = width3
@@ -127,12 +167,25 @@ class LNO2d(nn.Module):
         self.modes12 = modes12
         self.modes21 = modes21
         self.modes22 = modes22
+        
+        # Fourier part
+        self.widthF = widthF
+        self.modesF1 = modesF1
+        self.modesF2 = modesF2
+        
+        # Fourier convolutions
+        self.conv_f0 = SpectralConv2d_fast(self.widthF, self.modesF1, self.modesF2)
+        self.conv_f1 = SpectralConv2d_fast(self.widthF, self.modesF1, self.modesF2)
+        self.conv_f2 = SpectralConv2d_fast(self.widthF, self.modesF1, self.modesF2)
+        self.conv_f3 = SpectralConv2d_fast(self.widthF, self.modesF1, self.modesF2)
 
+        # Laplace convolutions
         self.fc2 = nn.Linear(3, self.width2) 
         self.conv_s0 = Steady(self.width2, self.width2, modes21,modes22)
         self.conv_s1 = Steady(self.width2, self.width2, modes21,modes22)
         self.conv_s2 = Steady(self.width2, self.width2, modes21,modes22)
         self.conv_s3 = Steady(self.width2, self.width2, modes21,modes22)
+        
         self.w0 = nn.Conv2d(self.width3, self.width3, 1)
         self.w1 = nn.Conv2d(self.width3, self.width3, 1)
         self.w2 = nn.Conv2d(self.width3, self.width3, 1)
@@ -174,6 +227,7 @@ class LNO2d(nn.Module):
         x1 = self.fc7(x1)
 
         # Steady-state part + W part
+        
         f2 = self.fc2(f)
         f2 = f2.permute(0, 3, 1, 2)
         x2 = self.norm2(self.conv_s0(self.norm2(f2)))
@@ -273,6 +327,11 @@ width1 = 16
 width2 = 16
 width3 = 16
 
+
+# for Fourier
+modesF = 12
+widthF = 20
+
 reader = MatReader('Data/data.mat')
 T = reader.read_field('t')
 X = reader.read_field('x')
@@ -305,7 +364,7 @@ x_test = x_test.reshape(ntest,x_test.shape[1],x_test.shape[2],1)
 train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_train, y_train), batch_size=batch_size_train, shuffle=True)
 vali_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_vali, y_vali), batch_size=batch_size_vali, shuffle=True)
 # model
-model = LNO2d(width1,width2,width3,modes11,modes12,modes21,modes22).cuda()
+model = LNO2d(width1,width2,width3,modes11,modes12,modes21,modes22, widthF, modesF, modesF).cuda()
 
 
 # ====================================
