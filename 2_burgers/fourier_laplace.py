@@ -174,10 +174,10 @@ class LNO2d(nn.Module):
         self.modesF2 = modesF2
         
         # Fourier convolutions
-        self.conv_f0 = SpectralConv2d_fast(self.widthF, self.modesF1, self.modesF2)
-        self.conv_f1 = SpectralConv2d_fast(self.widthF, self.modesF1, self.modesF2)
-        self.conv_f2 = SpectralConv2d_fast(self.widthF, self.modesF1, self.modesF2)
-        self.conv_f3 = SpectralConv2d_fast(self.widthF, self.modesF1, self.modesF2)
+        self.conv_f0 = SpectralConv2d_fast(self.widthF, self.widthF, self.modesF1, self.modesF2)
+        self.conv_f1 = SpectralConv2d_fast(self.widthF, self.widthF, self.modesF1, self.modesF2)
+        self.conv_f2 = SpectralConv2d_fast(self.widthF, self.widthF, self.modesF1, self.modesF2)
+        self.conv_f3 = SpectralConv2d_fast(self.widthF, self.widthF, self.modesF1, self.modesF2)
 
         # Laplace convolutions
         self.fc2 = nn.Linear(3, self.width2) 
