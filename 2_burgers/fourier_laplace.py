@@ -210,6 +210,9 @@ class LNO2d(nn.Module):
     def forward(self,f):
         grid = self.get_grid(f.shape, f.device)
         f = torch.cat((f, grid), dim=-1)
+        
+        # # # Fourier prepration
+        f0 = self.fc0(f)
 
         # # # # # Transient part
         f1 = self.fc1(f)
