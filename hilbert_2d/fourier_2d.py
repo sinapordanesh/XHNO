@@ -144,11 +144,16 @@ class FNO2d(nn.Module):
 ################################################################
 # configs
 ################################################################
-TRAIN_PATH = '/central/groups/tensorlab/khassibi/fourier_neural_operator/data/planes.mat'
-TEST_PATH = '/central/groups/tensorlab/khassibi/fourier_neural_operator/data/planes.mat'
+# TRAIN_PATH = '/central/groups/tensorlab/khassibi/fourier_neural_operator/data/planes.mat'
+# TEST_PATH = '/central/groups/tensorlab/khassibi/fourier_neural_operator/data/planes.mat'
 
-ntrain = 3000
-ntest = 1000
+TRAIN_PATH = './data/Darcy_241/piececonst_r241_N1024_smooth1.mat'
+TEST_PATH = './data/Darcy_241/piececonst_r241_N1024_smooth1.mat'
+
+# ntrain = 3000
+# ntest = 1000
+ntrain = 180
+ntest = 61
 
 batch_size = 20
 learning_rate = 0.001
@@ -163,8 +168,11 @@ width = 32
 # r = 5
 r = 8
 # s = h
-s1 = 768//r
-s2 = 288//r
+# s1 = 768//r
+# s2 = 288//r
+s1 = 241//r
+s2 = 241//r
+
 
 ################################################################
 # load data and data normalization

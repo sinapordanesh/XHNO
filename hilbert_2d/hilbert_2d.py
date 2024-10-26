@@ -144,11 +144,16 @@ class FNO2d(nn.Module):
 ################################################################
 # configs
 ################################################################
-TRAIN_PATH = '/central/groups/tensorlab/khassibi/fourier_neural_operator/data/planes.mat'
-TEST_PATH = '/central/groups/tensorlab/khassibi/fourier_neural_operator/data/planes.mat'
+# TRAIN_PATH = '/central/groups/tensorlab/khassibi/fourier_neural_operator/data/planes.mat'
+# TEST_PATH = '/central/groups/tensorlab/khassibi/fourier_neural_operator/data/planes.mat'
 
-ntrain = 3000
-ntest = 1000
+TRAIN_PATH = './data/Darcy_241/piececonst_r241_N1024_smooth1.mat'
+TEST_PATH = './data/Darcy_241/piececonst_r241_N1024_smooth1.mat'
+
+# ntrain = 3000
+# ntest = 1000
+ntrain = 180
+ntest = 61
 
 batch_size = 20
 learning_rate = 0.001
@@ -163,8 +168,11 @@ width = 32
 # r = 5
 r = 8
 # s = h
-s1 = 768//r
-s2 = 288//r
+# s1 = 768//r
+# s2 = 288//r
+s1 = 241//r
+s2 = 241//r
+
 
 ################################################################
 # load data and data normalization
@@ -174,12 +182,19 @@ training_idx = idx[:ntrain]
 testing_idx = idx[-ntest:]
 reader = MatReader(TRAIN_PATH)
 
-x_train = reader.read_field('P_plane').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
-y_train = reader.read_field('V_plane').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
+# x_train = reader.read_field('P_plane').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
+# y_train = reader.read_field('V_plane').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
+
+x_train = reader.read_field('Kcoeff').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
+y_train = reader.read_field('sol').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
+
+# reader.load_file(TEST_PATH)
+# x_test = reader.read_field('P_plane').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
+# y_test = reader.read_field('V_plane').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
 
 reader.load_file(TEST_PATH)
-x_test = reader.read_field('P_plane').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
-y_test = reader.read_field('V_plane').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
+x_test = reader.read_field('Kcoeff').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
+y_test = reader.read_field('sol').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
 
 x_normalizer = UnitGaussianNormalizer(x_train)
 x_train = x_normalizer.encode(x_train)
