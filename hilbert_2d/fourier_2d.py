@@ -174,12 +174,19 @@ training_idx = idx[:ntrain]
 testing_idx = idx[-ntest:]
 reader = MatReader(TRAIN_PATH)
 
-x_train = reader.read_field('P_plane').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
-y_train = reader.read_field('V_plane').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
+# x_train = reader.read_field('P_plane').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
+# y_train = reader.read_field('V_plane').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
+
+x_train = reader.read_field('Kcoeff').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
+y_train = reader.read_field('sol').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
+
+# reader.load_file(TEST_PATH)
+# x_test = reader.read_field('P_plane').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
+# y_test = reader.read_field('V_plane').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
 
 reader.load_file(TEST_PATH)
-x_test = reader.read_field('P_plane').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
-y_test = reader.read_field('V_plane').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
+x_test = reader.read_field('Kcoeff').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
+y_test = reader.read_field('sol').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
 
 x_normalizer = UnitGaussianNormalizer(x_train)
 x_train = x_normalizer.encode(x_train)
