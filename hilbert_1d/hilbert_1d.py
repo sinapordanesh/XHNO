@@ -30,7 +30,7 @@ class SpectralConv1d(nn.Module):
         super(SpectralConv1d, self).__init__()
 
         """
-        1D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
+        1D Hilbert layer. 
         """
 
         self.in_channels = in_channels
@@ -46,16 +46,58 @@ class SpectralConv1d(nn.Module):
         return torch.einsum("bix,iox->box", input, weights)
 
     def forward(self, x):
+        """
+        Explanation:
+        
+        We will modify the forward method to replace the Fourier transform operations with Hilbert transform operations. The Hilbert transform can be computed in the frequency domain by multiplying the Fourier transform of the signal by -i * sign(ω), where ω represents the frequency components.
+
+        Compute the Fourier Transform:
+
+        We compute the full Fourier transform of the input x using torch.fft.fft.
+        x_ft now contains the frequency components of x.
+        Create the Hilbert Transform Multiplier:
+
+        freqs are the frequency bins corresponding to each element in x_ft.
+        H is the Hilbert transform multiplier defined as -1j * sign(ω).
+        We reshape H to match the dimensions of x_ft for broadcasting during multiplication.
+        Apply the Hilbert Transform:
+
+        Multiply x_ft by H to get the frequency components of the Hilbert-transformed signal.
+        Multiply with Weights:
+
+        We only consider the first self.modes1 frequency modes for efficiency.
+        self.compl_mul1d performs the complex multiplication between the transformed signal and the weights.
+        out_ft stores the result in the frequency domain.
+        Inverse Fourier Transform:
+
+        We apply the inverse Fourier transform using torch.fft.ifft to get back to the spatial domain.
+        Since the result may be complex due to numerical errors, we take the real part using .real.
+        """
+        
         batchsize = x.shape[0]
-        #Compute Fourier coeffcients up to factor of e^(- something constant)
-        x_ft = torch.fft.rfft(x)
-
-        # Multiply relevant Fourier modes
-        out_ft = torch.zeros(batchsize, self.out_channels, x.size(-1)//2 + 1,  device=x.device, dtype=torch.cfloat)
-        out_ft[:, :, :self.modes1] = self.compl_mul1d(x_ft[:, :, :self.modes1], self.weights1)
-
-        #Return to physical space
-        x = torch.fft.irfft(out_ft, n=x.size(-1))
+        N = x.size(-1)
+        
+        # Compute the Fourier transform of the input
+        x_ft = torch.fft.fft(x, n = N)
+        
+        # Create the Hilbert transform multiplier
+        freqs = torch.fft.fftfreq(N).to(x.device)   # Frequency components
+        H = -1j * torch.sign(freqs)                 # Hilbert multiplier: -i * sign(ω)
+        H = H.reshape(1, 1, N)                      # Reshape for broadcasting
+        
+        # Apply the Hilbert transform in the frequency domain
+        x_ht_ft = x_ft * H                           # Element-wise multiplication
+        
+        # Multiply relevant frequency modes with weights
+        out_ft = torch.zeros(
+            batchsize, self.out_channels, N, device=x.device, dtype=torch.cfloat
+        )
+        out_ft[:, :, : self.modes1] = self.compl_mul1d(
+            x_ht_ft[:, :, : self.modes1], self.weights1
+        )
+        
+        # Return to the spatial domain
+        x = torch.fft.ifft(out_ft, n=N).real          # Take the real part
         return x
 
 class FNO1d(nn.Module):
