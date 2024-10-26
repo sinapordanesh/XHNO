@@ -50,84 +50,19 @@ class SpectralConv2d(nn.Module):
         return torch.einsum("bixy,ioxy->boxy", input, weights)
 
     def forward(self, x):
-        
-        """
-        Explanation:
-
-        Compute the Fourier Transform:
-
-        We compute the full Fourier transform of the input x using torch.fft.fft2.
-        x_ft now contains the frequency components of x.
-        Compute Frequency Grids:
-
-        freq_x and freq_y are the frequency bins for each axis.
-        omega_x and omega_y are 2D grids of frequencies.
-        Compute Magnitude of Omega:
-
-        omega_mag is the magnitude of the frequency vector at each point.
-        A small epsilon is added to avoid division by zero.
-        Compute Riesz Transform Multipliers:
-
-        Hx and Hy are the multipliers for the x and y components of the Riesz transform.
-        These are complex-valued and involve division by omega_mag.
-        Apply the Riesz Transform:
-
-        Multiply x_ft by Hx and Hy to get the transformed frequency components x_ht_ft_x and x_ht_ft_y.
-        Multiply with Weights:
-
-        We initialize out_ft as zeros.
-        We apply self.weights1 and self.weights2 to the transformed components.
-        We sum the contributions from both the x and y components.
-        Inverse Fourier Transform:
-
-        We apply the inverse Fourier transform using torch.fft.ifft2.
-        Since the result may be complex due to numerical errors, we take the real part using .real.
-
-        """
-        
         batchsize = x.shape[0]
-        # Compute the Fourier transform of the input
-        x_ft = torch.fft.fft2(x)
-        batchsize, in_channels, Nx, Ny = x_ft.shape
+        #Compute Fourier coeffcients up to factor of e^(- something constant)
+        x_ft = torch.fft.rfft2(x)
 
-        # Compute frequency grids
-        freq_x = torch.fft.fftfreq(Nx, d=1.0).to(x.device)
-        freq_y = torch.fft.fftfreq(Ny, d=1.0).to(x.device)
-        omega_x, omega_y = torch.meshgrid(freq_x, freq_y, indexing='ij')
-        omega_x = omega_x.unsqueeze(0).unsqueeze(0)  # Shape: (1, 1, Nx, Ny)
-        omega_y = omega_y.unsqueeze(0).unsqueeze(0)  # Shape: (1, 1, Nx, Ny)
+        # Multiply relevant Fourier modes
+        out_ft = torch.zeros(batchsize, self.out_channels,  x.size(-2), x.size(-1)//2 + 1, dtype=torch.cfloat, device=x.device)
+        out_ft[:, :, :self.modes1, :self.modes2] = \
+            self.compl_mul2d(x_ft[:, :, :self.modes1, :self.modes2], self.weights1)
+        out_ft[:, :, -self.modes1:, :self.modes2] = \
+            self.compl_mul2d(x_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
 
-        # Compute the magnitude of omega
-        epsilon = 1e-8  # Small number to avoid division by zero
-        omega_mag = torch.sqrt(omega_x ** 2 + omega_y ** 2 + epsilon)
-
-        # Compute the Riesz transform multipliers
-        Hx = -1j * (omega_x / omega_mag)
-        Hy = -1j * (omega_y / omega_mag)
-
-        # Apply the Riesz transform in the frequency domain
-        x_ht_ft_x = x_ft * Hx
-        x_ht_ft_y = x_ft * Hy
-
-        # Multiply relevant Fourier modes with weights
-        out_ft = torch.zeros_like(x_ft)
-        # For x-component (using weights1)
-        out_ft[:, :, :self.modes1, :self.modes2] += self.compl_mul2d(
-            x_ht_ft_x[:, :, :self.modes1, :self.modes2], self.weights1
-        )
-        out_ft[:, :, -self.modes1:, :self.modes2] += self.compl_mul2d(
-            x_ht_ft_x[:, :, -self.modes1:, :self.modes2], self.weights2
-        )
-        # For y-component (using weights1)
-        out_ft[:, :, :self.modes1, :self.modes2] += self.compl_mul2d(
-            x_ht_ft_y[:, :, :self.modes1, :self.modes2], self.weights1
-        )
-        out_ft[:, :, -self.modes1:, :self.modes2] += self.compl_mul2d(
-            x_ht_ft_y[:, :, -self.modes1:, :self.modes2], self.weights2
-        )
-
-        # Return to the spatial domain
-        x = torch.fft.ifft2(out_ft).real  # Take the real part
+        #Return to physical space
+        x = torch.fft.irfft2(out_ft, s=(x.size(-2), x.size(-1)))
         return x
 
 class FNO2d(nn.Module):
