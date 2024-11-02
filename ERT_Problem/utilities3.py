@@ -114,6 +114,11 @@ class UnitGaussianNormalizer(object):
         self.mean = self.mean.cpu()
         self.std = self.std.cpu()
 
+    # ---- New feature added to handel the CUDA call ----
+    def to(self, device):
+        self.mean = self.mean.to(device)
+        self.std = self.std.to(device)
+
 # normalization, Gaussian
 class GaussianNormalizer(object):
     def __init__(self, x, eps=0.00001):
