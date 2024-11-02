@@ -4,6 +4,7 @@ scipy
 matplotlib
 timeit
 pandas
+h5py
 
 # CUDA supported torch installation commands
 # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
