@@ -417,6 +417,7 @@ test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_test,
 
 # Run on CPU
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Devide is: {device}")
 #device = torch.device('cpu')
 model = FNO2d(modes, modes, width).to(device)
 print(count_params(model))
