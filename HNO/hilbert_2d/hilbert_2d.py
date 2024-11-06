@@ -1,0 +1,326 @@
+"""
+@author: Zongyi Li
+This file is the Fourier Neural Operator for 2D problem such as the Darcy Flow discussed in Section 5.2 in the [paper](https://arxiv.org/pdf/2010.08895.pdf).
+"""
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn.parameter import Parameter
+
+import matplotlib.pyplot as plt
+
+import operator
+from functools import reduce
+from functools import partial
+
+from timeit import default_timer
+from utilities3 import *
+
+from Adam import Adam
+
+torch.manual_seed(0)
+np.random.seed(0)
+
+
+################################################################
+# fourier layer
+################################################################
+class SpectralConv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, modes1, modes2):
+        super(SpectralConv2d, self).__init__()
+
+        """
+        2D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
+        """
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.modes1 = modes1 #Number of Fourier modes to multiply, at most floor(N/2) + 1
+        self.modes2 = modes2
+
+        self.scale = (1 / (in_channels * out_channels))
+        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat))
+        self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat))
+
+    # Complex multiplication
+    def compl_mul2d(self, input, weights):
+        # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
+        return torch.einsum("bixy,ioxy->boxy", input, weights)
+
+    def forward(self, x):
+        
+        """
+        Explanation:
+
+        Compute the Fourier Transform:
+
+        We compute the full Fourier transform of the input x using torch.fft.fft2.
+        x_ft now contains the frequency components of x.
+        Compute Frequency Grids:
+
+        freq_x and freq_y are the frequency bins for each axis.
+        omega_x and omega_y are 2D grids of frequencies.
+        Compute Magnitude of Omega:
+
+        omega_mag is the magnitude of the frequency vector at each point.
+        A small epsilon is added to avoid division by zero.
+        Compute Riesz Transform Multipliers:
+
+        Hx and Hy are the multipliers for the x and y components of the Riesz transform.
+        These are complex-valued and involve division by omega_mag.
+        Apply the Riesz Transform:
+
+        Multiply x_ft by Hx and Hy to get the transformed frequency components x_ht_ft_x and x_ht_ft_y.
+        Multiply with Weights:
+
+        We initialize out_ft as zeros.
+        We apply self.weights1 and self.weights2 to the transformed components.
+        We sum the contributions from both the x and y components.
+        Inverse Fourier Transform:
+
+        We apply the inverse Fourier transform using torch.fft.ifft2.
+        Since the result may be complex due to numerical errors, we take the real part using .real.
+
+        """
+        
+        batchsize = x.shape[0]
+        # Compute the Fourier transform of the input
+        x_ft = torch.fft.fft2(x)
+        batchsize, in_channels, Nx, Ny = x_ft.shape
+
+        # Compute frequency grids
+        freq_x = torch.fft.fftfreq(Nx, d=1.0).to(x.device)
+        freq_y = torch.fft.fftfreq(Ny, d=1.0).to(x.device)
+        omega_x, omega_y = torch.meshgrid(freq_x, freq_y, indexing='ij')
+        omega_x = omega_x.unsqueeze(0).unsqueeze(0)  # Shape: (1, 1, Nx, Ny)
+        omega_y = omega_y.unsqueeze(0).unsqueeze(0)  # Shape: (1, 1, Nx, Ny)
+
+        # Compute the magnitude of omega
+        epsilon = 1e-8  # Small number to avoid division by zero
+        omega_mag = torch.sqrt(omega_x ** 2 + omega_y ** 2 + epsilon)
+
+        # Compute the Riesz transform multipliers
+        Hx = -1j * (omega_x / omega_mag)
+        Hy = -1j * (omega_y / omega_mag)
+
+        # Apply the Riesz transform in the frequency domain
+        x_ht_ft_x = x_ft * Hx
+        x_ht_ft_y = x_ft * Hy
+
+        # Multiply relevant Fourier modes with weights
+        out_ft = torch.zeros_like(x_ft)
+        # For x-component (using weights1)
+        out_ft[:, :, :self.modes1, :self.modes2] += self.compl_mul2d(
+            x_ht_ft_x[:, :, :self.modes1, :self.modes2], self.weights1
+        )
+        out_ft[:, :, -self.modes1:, :self.modes2] += self.compl_mul2d(
+            x_ht_ft_x[:, :, -self.modes1:, :self.modes2], self.weights2
+        )
+        # For y-component (using weights1)
+        out_ft[:, :, :self.modes1, :self.modes2] += self.compl_mul2d(
+            x_ht_ft_y[:, :, :self.modes1, :self.modes2], self.weights1
+        )
+        out_ft[:, :, -self.modes1:, :self.modes2] += self.compl_mul2d(
+            x_ht_ft_y[:, :, -self.modes1:, :self.modes2], self.weights2
+        )
+
+        # Return to the spatial domain
+        x = torch.fft.ifft2(out_ft).real  # Take the real part
+        return x
+
+class FNO2d(nn.Module):
+    def __init__(self, modes1, modes2,  width):
+        super(FNO2d, self).__init__()
+
+        """
+        The overall network. It contains 4 layers of the Fourier layer.
+        1. Lift the input to the desire channel dimension by self.fc0 .
+        2. 4 layers of the integral operators u' = (W + K)(u).
+            W defined by self.w; K defined by self.conv .
+        3. Project from the channel space to the output space by self.fc1 and self.fc2 .
+        
+        input: the solution of the coefficient function and locations (a(x, y), x, y)
+        input shape: (batchsize, x=s, y=s, c=3)
+        output: the solution 
+        output shape: (batchsize, x=s, y=s, c=1)
+        """
+
+        self.modes1 = modes1
+        self.modes2 = modes2
+        self.width = width
+        self.padding = 9 # pad the domain if input is non-periodic
+        self.fc0 = nn.Linear(3, self.width) # input channel is 3: (a(x, y), x, y)
+
+        self.conv0 = SpectralConv2d(self.width, self.width, self.modes1, self.modes2)
+        self.conv1 = SpectralConv2d(self.width, self.width, self.modes1, self.modes2)
+        self.conv2 = SpectralConv2d(self.width, self.width, self.modes1, self.modes2)
+        self.conv3 = SpectralConv2d(self.width, self.width, self.modes1, self.modes2)
+        self.w0 = nn.Conv2d(self.width, self.width, 1)
+        self.w1 = nn.Conv2d(self.width, self.width, 1)
+        self.w2 = nn.Conv2d(self.width, self.width, 1)
+        self.w3 = nn.Conv2d(self.width, self.width, 1)
+
+        self.fc1 = nn.Linear(self.width, 128)
+        self.fc2 = nn.Linear(128, 1)
+
+    def forward(self, x):
+        grid = self.get_grid(x.shape, x.device)
+        x = torch.cat((x, grid), dim=-1)
+        x = self.fc0(x)
+        x = x.permute(0, 3, 1, 2)
+        x = F.pad(x, [0,self.padding, 0,self.padding])
+
+        x1 = self.conv0(x)
+        x2 = self.w0(x)
+        x = x1 + x2
+        x = F.gelu(x)
+
+        x1 = self.conv1(x)
+        x2 = self.w1(x)
+        x = x1 + x2
+        x = F.gelu(x)
+
+        x1 = self.conv2(x)
+        x2 = self.w2(x)
+        x = x1 + x2
+        x = F.gelu(x)
+
+        x1 = self.conv3(x)
+        x2 = self.w3(x)
+        x = x1 + x2
+
+        x = x[..., :-self.padding, :-self.padding]
+        x = x.permute(0, 2, 3, 1)
+        x = self.fc1(x)
+        x = F.gelu(x)
+        x = self.fc2(x)
+        return x
+    
+    def get_grid(self, shape, device):
+        batchsize, size_x, size_y = shape[0], shape[1], shape[2]
+        gridx = torch.tensor(np.linspace(0, 1, size_x), dtype=torch.float)
+        gridx = gridx.reshape(1, size_x, 1, 1).repeat([batchsize, 1, size_y, 1])
+        gridy = torch.tensor(np.linspace(0, 1, size_y), dtype=torch.float)
+        gridy = gridy.reshape(1, 1, size_y, 1).repeat([batchsize, size_x, 1, 1])
+        return torch.cat((gridx, gridy), dim=-1).to(device)
+
+################################################################
+# configs
+################################################################
+# TRAIN_PATH = '/central/groups/tensorlab/khassibi/fourier_neural_operator/data/planes.mat'
+# TEST_PATH = '/central/groups/tensorlab/khassibi/fourier_neural_operator/data/planes.mat'
+
+TRAIN_PATH = './data/Darcy_241/piececonst_r241_N1024_smooth1.mat'
+TEST_PATH = './data/Darcy_241/piececonst_r241_N1024_smooth1.mat'
+
+# ntrain = 3000
+# ntest = 1000
+ntrain = 180
+ntest = 61
+
+batch_size = 20
+learning_rate = 0.001
+
+epochs = 500
+step_size = 100
+gamma = 0.5
+
+modes = 12
+width = 32
+
+# r = 5
+r = 8
+# s = h
+# s1 = 768//r
+# s2 = 288//r
+s1 = 241//r
+s2 = 241//r
+
+
+################################################################
+# load data and data normalization
+################################################################
+idx = torch.randperm(ntrain + ntest)
+training_idx = idx[:ntrain]
+testing_idx = idx[-ntest:]
+reader = MatReader(TRAIN_PATH)
+
+# x_train = reader.read_field('P_plane').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
+# y_train = reader.read_field('V_plane').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
+
+x_train = reader.read_field('Kcoeff').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
+y_train = reader.read_field('sol').permute(2,0,1)[training_idx][:,::r,::r][:,:s1,:s2]
+
+# reader.load_file(TEST_PATH)
+# x_test = reader.read_field('P_plane').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
+# y_test = reader.read_field('V_plane').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
+
+reader.load_file(TEST_PATH)
+x_test = reader.read_field('Kcoeff').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
+y_test = reader.read_field('sol').permute(2,0,1)[testing_idx][:,::r,::r][:,:s1,:s2]
+
+x_normalizer = UnitGaussianNormalizer(x_train)
+x_train = x_normalizer.encode(x_train)
+x_test = x_normalizer.encode(x_test)
+
+y_normalizer = UnitGaussianNormalizer(y_train)
+y_train = y_normalizer.encode(y_train)
+
+x_train = x_train.reshape(ntrain,s1,s2,1)
+x_test = x_test.reshape(ntest,s1,s2,1)
+
+train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_train, y_train), batch_size=batch_size, shuffle=True, drop_last=True)
+test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_test, y_test), batch_size=batch_size, shuffle=False, drop_last=True)
+
+################################################################
+# training and evaluation
+################################################################
+model = FNO2d(modes, modes, width).cuda()
+print(count_params(model))
+
+optimizer = Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
+
+myloss = LpLoss(size_average=False)
+y_normalizer.cuda()
+for ep in range(epochs):
+    model.train()
+    t1 = default_timer()
+    train_l2 = 0
+    for x, y in train_loader:
+        x, y = x.cuda(), y.cuda()
+
+        optimizer.zero_grad()
+        # out = model(x).reshape(batch_size, s, s)
+        out = model(x).reshape(batch_size, s1, s2)
+        out = y_normalizer.decode(out)
+        y = y_normalizer.decode(y)
+
+        loss = myloss(out.view(batch_size,-1), y.view(batch_size,-1))
+        loss.backward()
+
+        optimizer.step()
+        train_l2 += loss.item()
+
+    scheduler.step()
+
+    model.eval()
+    test_l2 = 0.0
+    with torch.no_grad():
+        for x, y in test_loader:
+            x, y = x.cuda(), y.cuda()
+
+            # out = model(x).reshape(batch_size, s, s)
+            out = model(x).reshape(batch_size, s1, s2)
+            out = y_normalizer.decode(out)
+
+            test_l2 += myloss(out.view(batch_size,-1), y.view(batch_size,-1)).item()
+
+    train_l2/= ntrain
+    test_l2 /= ntest
+
+    t2 = default_timer()
+    print(ep, t2-t1, train_l2, test_l2)
+torch.save(model, "output/planes_3x4_patch")
