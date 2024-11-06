@@ -267,11 +267,12 @@ class SpectralConv2d(nn.Module):
 
     # Complex multiplication
     def compl_mul2d(self, input, weights):
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
         return torch.einsum("bixy,ioxy->boxy", input, weights)
 
     def forward(self, x):
+        import pdb; pdb.set_trace()
         batchsize = x.shape[0]
         #Compute Fourier coeffcients up to factor of e^(- something constant)
         x_ft = torch.fft.rfft2(x)
@@ -325,6 +326,7 @@ class FNO2d(nn.Module):
     def forward(self, x):
         grid = self.get_grid(x.shape, x.device)
         x = torch.cat((x, grid), dim=-1)
+
         x = self.fc0(x)
         x = x.permute(0, 3, 1, 2)
         x = F.pad(x, [0,self.padding, 0,self.padding])

@@ -174,9 +174,10 @@ class LNO2d(nn.Module):
         self.widthF = widthF
         self.modesF1 = modesF1
         self.modesF2 = modesF2
-        
-        # Fourier convolutions
+        self.padding = 9
         self.fc0 = nn.Linear(3, self.widthF) # input channel is 3: (a(x, y), x, y)
+
+        # Fourier convolutions
         self.conv_f0 = SpectralConv2d_fast(self.widthF, self.widthF, self.modesF1, self.modesF2)
         self.conv_f1 = SpectralConv2d_fast(self.widthF, self.widthF, self.modesF1, self.modesF2)
         self.conv_f2 = SpectralConv2d_fast(self.widthF, self.widthF, self.modesF1, self.modesF2)
@@ -215,7 +216,9 @@ class LNO2d(nn.Module):
         f = torch.cat((f, grid), dim=-1)
         
         # # # Fourier prepration
-        f0 = self.fc0(f)
+        xf = self.fc0(f)
+        xf = xf.permute(0, 3, 1, 2)
+        xf = F.pad(xf, [0, self.padding, 0, self.padding])
 
         # # # # # Transient part
         f1 = self.fc1(f)
@@ -233,13 +236,14 @@ class LNO2d(nn.Module):
         x1 = self.fc7(x1)
 
         # Steady-state part + W part
-        
+        import pdb; pdb.set_trace()
         f2 = self.fc2(f)
         f2 = f2.permute(0, 3, 1, 2)
         x2 = self.norm2(self.conv_s0(self.norm2(f2)))
-        x4 = self.conv_f0(f) #Fourier layer
+        x4 = self.conv_f0(xf) #Fourier layer
         x234 = x2 + x4
         x234 = torch.sin(x234)
+
 
         x2 = self.norm2(self.conv_s1(self.norm2(x234)))
         x3 = self.w1(x234)
@@ -311,7 +315,6 @@ class LNO2d(nn.Module):
         gridy = torch.tensor(np.linspace(0, 1, size_y), dtype=torch.float)
         gridy = gridy.reshape(1, 1, size_y, 1).repeat([batchsize, size_x, 1, 1])
         return torch.cat((gridx, gridy), dim=-1).to(device)
-    
  
 # ====================================
 #  Define parameters and Load data
@@ -340,7 +343,7 @@ width3 = 16
 
 # for Fourier
 modesF = 12
-widthF = 20
+widthF = 32
 
 reader = MatReader('data/data.mat')
 T = reader.read_field('t')
@@ -398,7 +401,7 @@ for ep in range(epochs):
     for x, y in train_loader:
         x, y = x.cuda(), y.cuda()
         optimizer.zero_grad()
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         out = model(x)   
         mse = F.mse_loss(out.view(batch_size_train, -1), y.view(batch_size_train, -1), reduction='mean')
         l2 = myloss(out.view(-1,x_train.shape[1],x_train.shape[2]), y)
