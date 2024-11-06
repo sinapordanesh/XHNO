@@ -273,7 +273,7 @@ width1 = 16
 width2 = 16
 width3 = 16
 
-reader = MatReader('Data/data.mat')
+reader = MatReader('data/data.mat')
 T = reader.read_field('t')
 X = reader.read_field('x')
 

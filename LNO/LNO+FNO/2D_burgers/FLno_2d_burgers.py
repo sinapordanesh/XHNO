@@ -116,6 +116,7 @@ class Steady(nn.Module):
         x2=x2/x.size(-1)/x.size(-2)
         return x2
 
+
 class SpectralConv2d_fast(nn.Module):
     def __init__(self, in_channels, out_channels, modes1, modes2):
         super(SpectralConv2d_fast, self).__init__()
@@ -135,6 +136,7 @@ class SpectralConv2d_fast(nn.Module):
 
     # Complex multiplication
     def compl_mul2d(self, input, weights):
+        # import pdb; pdb.set_trace()
         # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
         return torch.einsum("bixy,ioxy->boxy", input, weights)
 
@@ -174,6 +176,7 @@ class LNO2d(nn.Module):
         self.modesF2 = modesF2
         
         # Fourier convolutions
+        self.fc0 = nn.Linear(3, self.widthF) # input channel is 3: (a(x, y), x, y)
         self.conv_f0 = SpectralConv2d_fast(self.widthF, self.widthF, self.modesF1, self.modesF2)
         self.conv_f1 = SpectralConv2d_fast(self.widthF, self.widthF, self.modesF1, self.modesF2)
         self.conv_f2 = SpectralConv2d_fast(self.widthF, self.widthF, self.modesF1, self.modesF2)
@@ -339,7 +342,7 @@ width3 = 16
 modesF = 12
 widthF = 20
 
-reader = MatReader('Data/data.mat')
+reader = MatReader('data/data.mat')
 T = reader.read_field('t')
 X = reader.read_field('x')
 
@@ -395,6 +398,7 @@ for ep in range(epochs):
     for x, y in train_loader:
         x, y = x.cuda(), y.cuda()
         optimizer.zero_grad()
+        import pdb; pdb.set_trace()
         out = model(x)   
         mse = F.mse_loss(out.view(batch_size_train, -1), y.view(batch_size_train, -1), reduction='mean')
         l2 = myloss(out.view(-1,x_train.shape[1],x_train.shape[2]), y)

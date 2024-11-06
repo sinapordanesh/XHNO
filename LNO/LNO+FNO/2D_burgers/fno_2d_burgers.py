@@ -267,6 +267,7 @@ class SpectralConv2d(nn.Module):
 
     # Complex multiplication
     def compl_mul2d(self, input, weights):
+        import pdb; pdb.set_trace()
         # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
         return torch.einsum("bixy,ioxy->boxy", input, weights)
 
@@ -388,7 +389,7 @@ width1 = 16
 width2 = 16
 width3 = 16
 
-reader = MatReader('Data/data.mat')
+reader = MatReader('data/data.mat')
 T = reader.read_field('t')
 X = reader.read_field('x')
 
@@ -421,7 +422,7 @@ train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_trai
 vali_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_vali, y_vali), batch_size=batch_size_vali, shuffle=True)
 # model
 # model = LNO2d(width1,width2,width3,modes11,modes12,modes21,modes22).cuda()
-model = FNO2d(12, 12, 32)
+model = FNO2d(12, 12, 32).cuda()
 
 # ====================================
 # Training 
