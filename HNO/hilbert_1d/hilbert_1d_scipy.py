@@ -53,19 +53,28 @@ class SpectralConv1d(nn.Module):
         # Apply the Hilbert transform
         x_ht_np = hilbert(x_np, axis=-1)
         
-        # Convert back to PyTorch tensor
-        x_ht = torch.from_numpy(x_ht_np).to(x.device)
+        # Compute the FFT of the analytic signal
+        x_ht_ft = np.fft.fft(x_ht_np, axis=-1)
         
-        # Multiply by weights (ensure weights are compatible)
-        # You might need to adjust the weights to match the dimensions and types
-        out_ht = self.compl_mul1d(x_ht, self.weights1)
+        # Zero out unwanted modes (mode truncation)
+        modes = self.modes1
+        N = x_ht_ft.shape[-1]
+        x_ht_ft[..., modes:N - modes] = 0  # Zero out frequencies beyond the desired modes
+        
+        # Multiply by weights (ensure weights are compatible and in frequency domain)
+        # Assuming self.weights1 is in frequency domain and has appropriate shape
+        x_ht_ft = x_ht_ft * self.weights1.cpu().numpy()
+        
+        # Inverse FFT to get back to time domain
+        out_ht_np = np.fft.ifft(x_ht_ft, axis=-1)
         
         # Apply the inverse Hilbert transform (up to a sign)
-        out_ht_np = out_ht.detach().cpu().numpy()
         x_inverse_ht_np = -hilbert(out_ht_np.real, axis=-1)
+        
+        # Convert back to PyTorch tensor
         x_inverse_ht = torch.from_numpy(x_inverse_ht_np).to(x.device)
         
-        # Return the real part (since the result should be real-valued)
+        # Return the real part
         x = x_inverse_ht.real
         return x
             
