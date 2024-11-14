@@ -1,15 +1,24 @@
 #!/bin/bash
-#SBATCH --job-name=ert_hilbert
+#SBATCH --job-name=ERT_hilbert_2
 #SBATCH --output=%x_%j.out 
-#SBATCH --time=24:00:00               
+#SBATCH --time=6:00:00               
 #SBATCH --ntasks=1                    
 #SBATCH --cpus-per-task=8            
 #SBATCH --mem=64G                     
 #SBATCH --gres=gpu:1               
 
-source ../.venv/bin/activate
+# ---------------------------------------------------------------------
+echo "Starting run at: `date`"
+# ---------------------------------------------------------------------
+
+source $HOME/repos/XNO/.venv/bin/activate
 
 python ./ERT_hilbert.py
 
-# squeue -j 36561129
+# ---------------------------------------------------------------------
+echo "Job finished with exit code $? at: `date`"
+# ---------------------------------------------------------------------
+
+
+# squeue -j 36798836
 

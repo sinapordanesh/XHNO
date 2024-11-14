@@ -207,9 +207,9 @@ class FNO2d(nn.Module):
 ################################################################
 # configs
 ################################################################
-TRAIN_PATH = 'data/trainingK.mat'
-TEST_PATH = 'data/testK.mat'
-NEW_TEST_PATH = 'data/evalK.mat'
+TRAIN_PATH = 'data/s2/trainingV.mat'
+TEST_PATH = 'data/s2/testV.mat'
+NEW_TEST_PATH = 'data/s1/evalK.mat'
 
 
 
@@ -424,7 +424,7 @@ for ep in range(epochs):
         best_loss = test_l2
         counter = 0
         # Save the model 
-        torch.save(model.state_dict(), 'best_modelV1.pth')
+        torch.save(model.state_dict(), 'best_modelV1_F.pth')
     else:
         counter +=1
 
@@ -498,4 +498,4 @@ print(f"Time taken for predictions on new_test.mat: {prediction_time} seconds")
 
 # Save the predicted matrices
 predicted = out_new.cpu().numpy()  # Move tensor to CPU before converting to numpy
-sio.savemat('output/predicted1V.mat', {'predicted': predicted})
+sio.savemat('output/predicted1V_F_s2.mat', {'predicted': predicted})

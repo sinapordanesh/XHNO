@@ -42,7 +42,7 @@ class SpectralConv1d(nn.Module):
 
     # Complex multiplication
     def compl_mul1d(self, input, weights):
-        # (batch, in_channel, x ), (in_channel, out_channel, x) -> (batch, out_channel, x)
+        # (batch, out_channel, :mode ), (in_channel, out_channel, modes) -> (batch, out_channel, x)
         return torch.einsum("bix,iox->box", input, weights)
 
     def forward(self, x):
@@ -101,6 +101,11 @@ class SpectralConv1d(nn.Module):
             x_ht_ft[:, :, : self.modes1], self.weights1
         )
         
+        # Apply the inverse Hilbert transform multiplier
+        H_inv = 1j * torch.sign(freqs)              # Inverse Hilbert multiplier: +i * sign(ω)
+        H_inv = H_inv.reshape(1, 1, N)              # Reshape for broadcasting
+        out_ft = out_ft * H_inv                      # Apply inverse Hilbert Transform
+                
         # Return to the spatial domain
         x = torch.fft.ifft(out_ft, n=N).real          # Take the real part
         return x

@@ -68,7 +68,7 @@ class SpectralConv2d(nn.Module):
         super(SpectralConv2d, self).__init__()
 
         """
-        2D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
+        2D Hilbert layer. It does FFT, linear transform, and Inverse FFT.    
         """
 
         self.in_channels = in_channels
@@ -271,9 +271,11 @@ class FNO2d(nn.Module):
 ################################################################
 # configs
 ################################################################
-TRAIN_PATH = 'data/trainingK.mat'
-TEST_PATH = 'data/testK.mat'
-NEW_TEST_PATH = 'data/evalK.mat'
+# TRAIN_PATH = 'data/trainingK.mat'
+# TEST_PATH = 'data/testK.mat'
+TRAIN_PATH = 'data/s2/trainingV.mat'
+TEST_PATH = 'data/s2/testV.mat'
+NEW_TEST_PATH = 'data/s1/evalK.mat'
 
 
 
@@ -563,4 +565,4 @@ print(f"Time taken for predictions on new_test.mat: {prediction_time} seconds")
 
 # Save the predicted matrices
 predicted = out_new.cpu().numpy()  # Move tensor to CPU before converting to numpy
-sio.savemat('output/predicted1V.mat', {'predicted': predicted})
+sio.savemat('output/predicted1V_H_s2.mat', {'predicted': predicted})
