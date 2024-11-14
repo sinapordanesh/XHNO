@@ -52,39 +52,6 @@ class SpectralConv2d(nn.Module):
     def forward(self, x):
         
         """
-        Explanation:
-
-        Compute the Fourier Transform:
-
-        We compute the full Fourier transform of the input x using torch.fft.fft2.
-        x_ft now contains the frequency components of x.
-        Compute Frequency Grids:
-
-        freq_x and freq_y are the frequency bins for each axis.
-        omega_x and omega_y are 2D grids of frequencies.
-        Compute Magnitude of Omega:
-
-        omega_mag is the magnitude of the frequency vector at each point.
-        A small epsilon is added to avoid division by zero.
-        Compute Riesz Transform Multipliers:
-
-        Hx and Hy are the multipliers for the x and y components of the Riesz transform.
-        These are complex-valued and involve division by omega_mag.
-        Apply the Riesz Transform:
-
-        Multiply x_ft by Hx and Hy to get the transformed frequency components x_ht_ft_x and x_ht_ft_y.
-        Multiply with Weights:
-
-        We initialize out_ft as zeros.
-        We apply self.weights1 and self.weights2 to the transformed components.
-        We sum the contributions from both the x and y components.
-        Inverse Fourier Transform:
-
-        We apply the inverse Fourier transform using torch.fft.ifft2.
-        Since the result may be complex due to numerical errors, we take the real part using .real.
-
-        """
-        
         batchsize = x.shape[0]
         # Compute the Fourier transform of the input
         x_ft = torch.fft.fft2(x)
@@ -125,11 +92,68 @@ class SpectralConv2d(nn.Module):
         out_ft[:, :, -self.modes1:, :self.modes2] += self.compl_mul2d(
             x_ht_ft_y[:, :, -self.modes1:, :self.modes2], self.weights2
         )
+        
+        # Apply the inverse Riesz transform multipliers
+        H_inv_x = 1j * (omega_x / omega_mag)  # Inverse Riesz multiplier for x
+        H_inv_y = 1j * (omega_y / omega_mag)  # Inverse Riesz multiplier for y
+        out_ft = out_ft * H_inv_x + out_ft * H_inv_y  # Apply inverse Riesz Transform
 
         # Return to the spatial domain
         x = torch.fft.ifft2(out_ft).real  # Take the real part
         return x
+        
+        """
+        batchsize = x.shape[0]
+        N1, N2 = x.size(-2), x.size(-1)  # Dimensions along each axis
 
+        # Compute the 2D Fourier transform of the input
+        x_ft = torch.fft.fft2(x, s=(N1, N2))
+
+        # Create the Hilbert transform multipliers along each axis
+        freqs1 = torch.fft.fftfreq(N1).to(x.device)  # Frequency components along axis 1 (rows)
+        freqs2 = torch.fft.fftfreq(N2).to(x.device)  # Frequency components along axis 2 (columns)
+
+        H1 = -1j * torch.sign(freqs1)  # Hilbert multiplier along axis 1
+        H2 = -1j * torch.sign(freqs2)  # Hilbert multiplier along axis 2
+
+        # Reshape for broadcasting
+        H1 = H1.reshape(1, 1, N1, 1)
+        H2 = H2.reshape(1, 1, 1, N2)
+
+        # Apply the Hilbert transform along each axis separately
+        x_ht_ft_1 = x_ft * H1  # Hilbert Transform along axis 1
+        x_ht_ft_2 = x_ft * H2  # Hilbert Transform along axis 2
+
+        # Combine the transformed components (you can choose to sum or process separately)
+        x_ht_ft = x_ht_ft_1 + x_ht_ft_2
+
+        # Initialize out_ft with zeros
+        out_ft = torch.zeros(
+            batchsize, self.out_channels, N1, N2, device=x.device, dtype=torch.cfloat
+        )
+
+        # Multiply relevant Fourier modes with weights for positive frequencies
+        out_ft[:, :, :self.modes1, :self.modes2] = self.compl_mul2d(
+            x_ht_ft[:, :, :self.modes1, :self.modes2], self.weights1
+        )
+
+        # Multiply relevant Fourier modes with weights for negative frequencies
+        out_ft[:, :, -self.modes1:, :self.modes2] = self.compl_mul2d(
+            x_ht_ft[:, :, -self.modes1:, :self.modes2], self.weights2
+        )
+
+        # Apply the inverse Hilbert transform multipliers along each axis
+        H_inv1 = 1j * torch.sign(freqs1).reshape(1, 1, N1, 1)  # Inverse along axis 1
+        H_inv2 = 1j * torch.sign(freqs2).reshape(1, 1, 1, N2)  # Inverse along axis 2
+
+        # Apply the inverse Hilbert transform along each axis
+        out_ft = out_ft * H_inv1
+        out_ft = out_ft * H_inv2
+
+        # Return to the spatial domain
+        x = torch.fft.ifft2(out_ft, s=(N1, N2)).real  # Take the real part
+        return x
+        
 class FNO2d(nn.Module):
     def __init__(self, modes1, modes2,  width):
         super(FNO2d, self).__init__()
