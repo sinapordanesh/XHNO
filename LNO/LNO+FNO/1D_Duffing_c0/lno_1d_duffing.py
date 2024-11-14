@@ -27,7 +27,7 @@ import time
 # ====================================
 save_index = 1   
 current_directory = os.getcwd()
-case = "Case_"
+case = "Case_LNO_1D_Duffing"
 folder_index = str(save_index)
 
 results_dir = "/" + case + folder_index + "/"
