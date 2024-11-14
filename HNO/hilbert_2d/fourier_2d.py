@@ -148,7 +148,7 @@ class FNO2d(nn.Module):
 # TEST_PATH = '/central/groups/tensorlab/khassibi/fourier_neural_operator/data/planes.mat'
 
 TRAIN_PATH = './data/Darcy_241/piececonst_r241_N1024_smooth1.mat'
-TEST_PATH = './data/Darcy_241/piececonst_r241_N1024_smooth1.mat'
+TEST_PATH = './data/Darcy_241/piececonst_r241_N1024_smooth2.mat'
 
 # ntrain = 3000
 # ntest = 1000
@@ -258,4 +258,4 @@ for ep in range(epochs):
 
     t2 = default_timer()
     print(ep, t2-t1, train_l2, test_l2)
-torch.save(model, "/central/groups/tensorlab/khassibi/fourier_neural_operator/outputs/planes_3x4_patch")
+torch.save(model, "outputs/fourier_darcy")
