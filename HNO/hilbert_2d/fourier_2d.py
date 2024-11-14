@@ -258,4 +258,4 @@ for ep in range(epochs):
 
     t2 = default_timer()
     print(ep, t2-t1, train_l2, test_l2)
-torch.save(model, "/central/groups/tensorlab/khassibi/fourier_neural_operator/outputs/planes_3x4_patch")
+torch.save(model, "outputs/fourier_darcy")

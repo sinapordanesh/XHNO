@@ -32,7 +32,7 @@ class SpectralConv2d(nn.Module):
         super(SpectralConv2d, self).__init__()
 
         """
-        2D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
+        2D Hilbert layer. It does FFT, linear transform, and Inverse FFT.    
         """
 
         self.in_channels = in_channels
