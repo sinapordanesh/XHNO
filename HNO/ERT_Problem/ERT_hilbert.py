@@ -296,9 +296,9 @@ class FNO2d(nn.Module):
 ################################################################
 # TRAIN_PATH = 'data/trainingK.mat'
 # TEST_PATH = 'data/testK.mat'
-TRAIN_PATH = 'data/s1/trainingK.mat'
-TEST_PATH = 'data/s1/testK.mat'
-NEW_TEST_PATH = 'data/s1/evalK.mat'
+TRAIN_PATH = 'data/s2/trainingV.mat'
+TEST_PATH = 'data/s2/testV.mat'
+NEW_TEST_PATH = 'data/s2/evalV.mat'
 
 
 
@@ -588,4 +588,4 @@ print(f"Time taken for predictions on new_test.mat: {prediction_time} seconds")
 
 # Save the predicted matrices
 predicted = out_new.cpu().numpy()  # Move tensor to CPU before converting to numpy
-sio.savemat('output/predicted1K_H_s1.mat', {'predicted': predicted})
+sio.savemat('output/predicted1V_H_s2_2.mat', {'predicted': predicted})

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=hilbert_2d_ert_s1
+#SBATCH --job-name=hilbert_2d_ert_s2_2
 #SBATCH --output=%x_%j.out 
 #SBATCH --time=6:00:00               
 #SBATCH --ntasks=1                    
@@ -20,5 +20,5 @@ echo "Job finished with exit code $? at: `date`"
 # ---------------------------------------------------------------------
 
 
-# squeue -j 36871631, 36871852
+# squeue -j 36882790
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=ERT_fourier_2
+#SBATCH --job-name=r_fourier_2d_ert_s2_2
 #SBATCH --output=%x_%j.out 
 #SBATCH --time=6:00:00               
 #SBATCH --ntasks=1                    
@@ -18,5 +18,5 @@ python ./ERT_fourier.py
 echo "Job finished with exit code $? at: `date`"
 # ---------------------------------------------------------------------
 
-# squeue -j 36798992
+# squeue -j 36882863
 
