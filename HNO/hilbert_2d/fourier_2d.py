@@ -148,7 +148,7 @@ class FNO2d(nn.Module):
 # TEST_PATH = '/central/groups/tensorlab/khassibi/fourier_neural_operator/data/planes.mat'
 
 TRAIN_PATH = './data/Darcy_241/piececonst_r241_N1024_smooth1.mat'
-TEST_PATH = './data/Darcy_241/piececonst_r241_N1024_smooth2.mat'
+TEST_PATH = './data/Darcy_241/piececonst_r241_N1024_smooth1.mat'
 
 # ntrain = 3000
 # ntest = 1000
