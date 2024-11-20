@@ -1,10 +1,11 @@
 '''
 Module Description:
 ------
-This module implements the Laplace Neural Operator for duffing oscillator with damping c=0.5 (Example 2 in LNO paper)
+This module implements the Fourier Neural Operator for duffing oscillator with damping c=0.5 (Example 1 in XNO paper) 
+
 Author: 
 ------
-Qianying Cao (qianying_cao@brown.edu)
+Saman Pordanesh (saman.pordanesh@ucalgary.ca)
 '''
 
 import torch
@@ -16,8 +17,8 @@ import matplotlib.pyplot as plt
 import os
 import time
 from timeit import default_timer
-from ..utilities3 import *  # ADDED
-from ..Adam import Adam     # ADDED
+from utilities3 import *  # ADDED
+from Adam import Adam     # ADDED
 import time
 import argparse             # ADDED
 
@@ -36,6 +37,9 @@ parser.add_argument("--gamma", type=float, help="gamma", default=0.5)
 parser.add_argument("--modes", type=int, help="modes", default=16)
 parser.add_argument("--width", type=int, help="width", default=4)
 
+# ====================================
+#  Argument Parsing
+# ====================================
 
 args = parser.parse_args()
 
@@ -44,7 +48,7 @@ data_path = args.data_path
 
 # ====================================
 #  Define parameters from Arguments (Mostly by Default)
-# ====================================
+
 s = args.s
 
 batch_size_train = args.batch_size_train
@@ -58,7 +62,6 @@ gamma = args.gamma
 modes = args.modes
 width = args.width
 
-
 # ====================================
 # saving settings
 # ====================================
@@ -67,66 +70,83 @@ current_directory = os.getcwd()
 case = f"Case_{case}"
 folder_index = str(save_index)
 
-results_dir = "/" + case + folder_index +"/"
+results_dir = "/" + case + folder_index + "/"
 save_results_to = current_directory + results_dir
 if not os.path.exists(save_results_to):
     os.makedirs(save_results_to)
 
+
 # ====================================
-#  Laplace layer: pole-residue operation is used to calculate the poles and residues of the output
+#  Hilbert layer
 # ====================================
-class PR(nn.Module):
+
+class SpectralConv1d(nn.Module):
     def __init__(self, in_channels, out_channels, modes1):
-        super(PR, self).__init__()
+        super(SpectralConv1d, self).__init__()
+        
+        """
+        Hilbert Transformation Kernel in 1D.
+        """
+        
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.modes1 = modes1  #Number of Fourier modes to multiply, at most floor(N/2) + 1
 
-        self.modes1 = modes1
         self.scale = (1 / (in_channels*out_channels))
-        self.weights_pole = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, dtype=torch.cfloat))
-        self.weights_residue = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, dtype=torch.cfloat))
+        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, dtype=torch.cfloat))
 
-    def output_PR(self, lambda1,alpha, weights_pole, weights_residue):   
-        Pk=torch.zeros(weights_residue.shape[0],weights_residue.shape[0],weights_residue.shape[2],lambda1.shape[0], device=alpha.device, dtype=torch.cfloat)
-        Hw=torch.zeros(weights_residue.shape[0],weights_residue.shape[0],weights_residue.shape[2],lambda1.shape[0], device=alpha.device, dtype=torch.cfloat)
-        term1=torch.div(1,torch.sub(lambda1,weights_pole))
-        Hw=weights_residue*term1
-        Pk=-Hw  
-        output_residue1=torch.einsum("bix,xiok->box", alpha, Hw) 
-        output_residue2=torch.einsum("bix,xiok->bok", alpha, Pk) 
-        return output_residue1,output_residue2    
-    
+    # Complex multiplication
+    def compl_mul1d(self, input, weights):
+        # (batch, out_channel, :mode ), (in_channel, out_channel, modes) -> (batch, out_channel, x)
+        return torch.einsum("bix,iox->box", input, weights)
 
     def forward(self, x):
-        t=grid_x_train.cuda()
-        #Compute input poles and resudes by FFT
-        dt=(t[1]-t[0]).item()
-        alpha = torch.fft.fft(x)
-        lambda0=torch.fft.fftfreq(t.shape[0], dt)*2*np.pi*1j
-        lambda1=lambda0.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-        lambda1=lambda1.cuda()
+        """
+            Hilbert transform convolution
+        """
         
-        # Obtain output poles and residues for transient part and steady-state part
-        output_residue1,output_residue2= self.output_PR(lambda1, alpha, self.weights_pole, self.weights_residue)
+        batchsize = x.shape[0]
+        N = x.size(-1)
+        
+        # Compute the Fourier transform of the input
+        x_ft = torch.fft.fft(x, n = N)
+        
+        # Create the Hilbert transform multiplier
+        freqs = torch.fft.fftfreq(N).to(x.device)   # Frequency components
+        H = -1j * torch.sign(freqs)                 # Hilbert multiplier: -i * sign(ω)
+        H = H.reshape(1, 1, N)                      # Reshape for broadcasting
+        
+        # Apply the Hilbert transform in the frequency domain
+        x_ht_ft = x_ft * H                           # Element-wise multiplication
+        
+        # Multiply relevant frequency modes with weights
+        out_ft = torch.zeros(
+            batchsize, self.out_channels, N, device=x.device, dtype=torch.cfloat
+        )
+        out_ft[:, :, : self.modes1] = self.compl_mul1d(
+            x_ht_ft[:, :, : self.modes1], self.weights1
+        )
+        
+        # Apply the inverse Hilbert transform multiplier
+        H_inv = 1j * torch.sign(freqs)              # Inverse Hilbert multiplier: +i * sign(ω)
+        H_inv = H_inv.reshape(1, 1, N)              # Reshape for broadcasting
+        out_ft = out_ft * H_inv                      # Apply inverse Hilbert Transform
+                
+        # Return to the spatial domain
+        x = torch.fft.ifft(out_ft, n=N).real          # Take the real part
+        return x
 
-        # Obtain time histories of transient response and steady-state response
-        x1 = torch.fft.ifft(output_residue1, n=x.size(-1))
-        x1 = torch.real(x1)
-        x2=torch.zeros(output_residue2.shape[0],output_residue2.shape[1],t.shape[0], device=alpha.device, dtype=torch.cfloat)    
-        term1=torch.einsum("bix,kz->bixz", self.weights_pole, t.type(torch.complex64).reshape(1,-1))
-        term2=torch.exp(term1)
-        x2=torch.einsum("bix,ioxz->boz", output_residue2,term2)
-        x2=torch.real(x2)
-        x2=x2/x.size(-1)
-        return x1+x2
 
-class LNO1d(nn.Module):
+class HNO1d(nn.Module):
     def __init__(self, width,modes):
-        super(LNO1d, self).__init__()
+        super(HNO1d, self).__init__()
 
         self.width = width
         self.modes1 = modes
         self.fc0 = nn.Linear(1, self.width) 
 
-        self.conv0 = PR(self.width, self.width, self.modes1)
+        # Fourier layer
+        self.conv0 = SpectralConv1d(self.width, self.width, self.modes1)
         self.w0 = nn.Conv1d(self.width, self.width, 1)
 
         self.fc1 = nn.Linear(self.width, 128)
@@ -139,13 +159,13 @@ class LNO1d(nn.Module):
         x = x.permute(0, 2, 1)
 
         # Layer 1
-        x1 = self.conv0(x)
-        x2 = self.w0(x)
-        x = x1 +x2
+        x2 = self.conv0(x)
+        x3 = self.w0(x)
+        x = x2 + x3
 
         x = x.permute(0, 2, 1)
         x = self.fc1(x)
-        x =  torch.sin(x)
+        x = torch.sin(x)
         x = self.fc2(x)
         return x
 
@@ -158,7 +178,6 @@ class LNO1d(nn.Module):
 # ====================================
 #  Define parameters and Load data
 # ====================================
-     
 # s = 2048
 
 # batch_size_train = 20
@@ -193,7 +212,7 @@ train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_trai
 vali_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_vali, y_vali), batch_size=batch_size_vali, shuffle=True)
 
 # model
-model = LNO1d(width,modes).cuda()
+model = HNO1d(width,modes).cuda()
 
 
 # ====================================
@@ -275,7 +294,7 @@ if not os.path.exists(save_models_to):
 torch.save(model, save_models_to+'Wave_states')
 
 # ====================================
-# saving settings
+# testing
 # ====================================
 pred = torch.zeros(y_test.shape)
 index = 0
@@ -299,8 +318,7 @@ scipy.io.savemat(save_results_to+'wave_states_test.mat',
                             'y_test': y_test.numpy(), 
                             'y_pred': pred.cpu().numpy()})  
     
-
-
+        
     
 print("\n=============================")
 print('Testing error: %.3e'%(test_l2))

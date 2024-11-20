@@ -17,8 +17,8 @@ import matplotlib.pyplot as plt
 import os
 import time
 from timeit import default_timer
-from ..utilities3 import *  # ADDED
-from ..Adam import Adam     # ADDED
+from utilities3 import *  # ADDED
+from Adam import Adam     # ADDED
 import time
 import argparse             # ADDED
 
@@ -77,17 +77,17 @@ if not os.path.exists(save_results_to):
 
 
 # ====================================
-#  Hilbert layer
+#  Fourier layer
 # ====================================
 
 class SpectralConv1d(nn.Module):
     def __init__(self, in_channels, out_channels, modes1):
         super(SpectralConv1d, self).__init__()
-        
+
         """
-        Hilbert Transformation Kernel in 1D.
+        1D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
         """
-        
+
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.modes1 = modes1  #Number of Fourier modes to multiply, at most floor(N/2) + 1
@@ -97,49 +97,25 @@ class SpectralConv1d(nn.Module):
 
     # Complex multiplication
     def compl_mul1d(self, input, weights):
-        # (batch, out_channel, :mode ), (in_channel, out_channel, modes) -> (batch, out_channel, x)
+        # (batch, in_channel, x ), (in_channel, out_channel, x) -> (batch, out_channel, x)
         return torch.einsum("bix,iox->box", input, weights)
 
     def forward(self, x):
-        """
-            Hilbert transform convolution
-        """
-        
         batchsize = x.shape[0]
-        N = x.size(-1)
-        
-        # Compute the Fourier transform of the input
-        x_ft = torch.fft.fft(x, n = N)
-        
-        # Create the Hilbert transform multiplier
-        freqs = torch.fft.fftfreq(N).to(x.device)   # Frequency components
-        H = -1j * torch.sign(freqs)                 # Hilbert multiplier: -i * sign(ω)
-        H = H.reshape(1, 1, N)                      # Reshape for broadcasting
-        
-        # Apply the Hilbert transform in the frequency domain
-        x_ht_ft = x_ft * H                           # Element-wise multiplication
-        
-        # Multiply relevant frequency modes with weights
-        out_ft = torch.zeros(
-            batchsize, self.out_channels, N, device=x.device, dtype=torch.cfloat
-        )
-        out_ft[:, :, : self.modes1] = self.compl_mul1d(
-            x_ht_ft[:, :, : self.modes1], self.weights1
-        )
-        
-        # Apply the inverse Hilbert transform multiplier
-        H_inv = 1j * torch.sign(freqs)              # Inverse Hilbert multiplier: +i * sign(ω)
-        H_inv = H_inv.reshape(1, 1, N)              # Reshape for broadcasting
-        out_ft = out_ft * H_inv                      # Apply inverse Hilbert Transform
-                
-        # Return to the spatial domain
-        x = torch.fft.ifft(out_ft, n=N).real          # Take the real part
+        #Compute Fourier coeffcients up to factor of e^(- something constant)
+        x_ft = torch.fft.rfft(x)
+
+        # Multiply relevant Fourier modes
+        out_ft = torch.zeros(batchsize, self.out_channels, x.size(-1)//2 + 1,  device=x.device, dtype=torch.cfloat)
+        out_ft[:, :, :self.modes1] = self.compl_mul1d(x_ft[:, :, :self.modes1], self.weights1)
+
+        #Return to physical space
+        x = torch.fft.irfft(out_ft, n=x.size(-1))
         return x
 
-
-class HNO1d(nn.Module):
+class FNO1d(nn.Module):
     def __init__(self, width,modes):
-        super(HNO1d, self).__init__()
+        super(FNO1d, self).__init__()
 
         self.width = width
         self.modes1 = modes
@@ -148,6 +124,15 @@ class HNO1d(nn.Module):
         # Fourier layer
         self.conv0 = SpectralConv1d(self.width, self.width, self.modes1)
         self.w0 = nn.Conv1d(self.width, self.width, 1)
+        
+        self.conv1 = SpectralConv1d(self.width, self.width, self.modes1)
+        self.w1 = nn.Conv1d(self.width, self.width, 1)
+        
+        self.conv2 = SpectralConv1d(self.width, self.width, self.modes1)
+        self.w2 = nn.Conv1d(self.width, self.width, 1)
+        
+        self.conv3 = SpectralConv1d(self.width, self.width, self.modes1)
+        self.w3 = nn.Conv1d(self.width, self.width, 1)
 
         self.fc1 = nn.Linear(self.width, 128)
         self.fc2 = nn.Linear(128, 1)
@@ -161,6 +146,21 @@ class HNO1d(nn.Module):
         # Layer 1
         x2 = self.conv0(x)
         x3 = self.w0(x)
+        x = x2 + x3
+        
+        # Layer 2
+        x2 = self.conv1(x)
+        x3 = self.w1(x)
+        x = x2 + x3
+        
+        # Layer 3
+        x2 = self.conv2(x)
+        x3 = self.w2(x)
+        x = x2 + x3
+        
+        # Layer 4
+        x2 = self.conv3(x)
+        x3 = self.w3(x)
         x = x2 + x3
 
         x = x.permute(0, 2, 1)
@@ -212,7 +212,7 @@ train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_trai
 vali_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_vali, y_vali), batch_size=batch_size_vali, shuffle=True)
 
 # model
-model = HNO1d(width,modes).cuda()
+model = FNO1d(width,modes).cuda()
 
 
 # ====================================
