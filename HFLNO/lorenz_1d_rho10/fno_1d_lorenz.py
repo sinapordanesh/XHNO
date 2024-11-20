@@ -17,8 +17,8 @@ import matplotlib.pyplot as plt
 import os
 import time
 from timeit import default_timer
-from ..utilities3 import *  # ADDED
-from ..Adam import Adam     # ADDED
+from utilities3 import *  # ADDED
+from Adam import Adam     # ADDED
 import time
 import argparse             # ADDED
 
@@ -30,6 +30,8 @@ parser.add_argument("--data_path", help="Path to the data file.", type=str, requ
 parser.add_argument("--s", type=int, help="s", default=2048)
 parser.add_argument("--batch_size_train", type=int, help="batch_size_train", default=20)
 parser.add_argument("--batch_size_vali", type=int, help="batch_size_vali", default=20)
+parser.add_argument("--batch_size_test", type=int, help="batch_size_test", default=100)
+
 parser.add_argument("--learning_rate", type=float, help="learning_rate", default=0.002)
 parser.add_argument("--epochs", type=int, help="epochs", default=1000)
 parser.add_argument("--step_size", type=int, help="step_size", default=100)
@@ -53,6 +55,7 @@ s = args.s
 
 batch_size_train = args.batch_size_train
 batch_size_vali = args.batch_size_vali
+batch_size_test = args.batch_size_test
 
 learning_rate = args.learning_rate
 epochs = args.epochs
@@ -119,7 +122,7 @@ class FNO1d(nn.Module):
 
         self.width = width
         self.modes1 = modes
-        self.fc0 = nn.Linear(1, self.width) 
+        self.fc0 = nn.Linear(2, self.width) 
 
         # Fourier layer
         self.conv0 = SpectralConv1d(self.width, self.width, self.modes1)
@@ -138,8 +141,8 @@ class FNO1d(nn.Module):
         self.fc2 = nn.Linear(128, 1)
 
     def forward(self,x):
-        #grid = self.get_grid(x.shape, x.device)
-        #x = torch.cat((x, grid), dim=-1)
+        grid = self.get_grid(x.shape, x.device)
+        x = torch.cat((x, grid), dim=-1)
         x = self.fc0(x)
         x = x.permute(0, 2, 1)
 
@@ -165,7 +168,7 @@ class FNO1d(nn.Module):
 
         x = x.permute(0, 2, 1)
         x = self.fc1(x)
-        x = torch.sin(x)
+        x = torch.tanh(x)
         x = self.fc2(x)
         return x
 
@@ -300,7 +303,7 @@ pred = torch.zeros(y_test.shape)
 index = 0
 test_l2 = 0.0
 test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_test, y_test),
-                                          batch_size=1, shuffle=False)
+                                          batch_size=batch_size_test, shuffle=False)
 
 with torch.no_grad():
     for x, y in test_loader:
