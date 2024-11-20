@@ -52,56 +52,7 @@ class SpectralConv2d(nn.Module):
     def forward(self, x):
         
         """
-        batchsize = x.shape[0]
-        # Compute the Fourier transform of the input
-        x_ft = torch.fft.fft2(x)
-        batchsize, in_channels, Nx, Ny = x_ft.shape
-
-        # Compute frequency grids
-        freq_x = torch.fft.fftfreq(Nx, d=1.0).to(x.device)
-        freq_y = torch.fft.fftfreq(Ny, d=1.0).to(x.device)
-        omega_x, omega_y = torch.meshgrid(freq_x, freq_y, indexing='ij')
-        omega_x = omega_x.unsqueeze(0).unsqueeze(0)  # Shape: (1, 1, Nx, Ny)
-        omega_y = omega_y.unsqueeze(0).unsqueeze(0)  # Shape: (1, 1, Nx, Ny)
-
-        # Compute the magnitude of omega
-        epsilon = 1e-8  # Small number to avoid division by zero
-        omega_mag = torch.sqrt(omega_x ** 2 + omega_y ** 2 + epsilon)
-
-        # Compute the Riesz transform multipliers
-        Hx = -1j * (omega_x / omega_mag)
-        Hy = -1j * (omega_y / omega_mag)
-
-        # Apply the Riesz transform in the frequency domain
-        x_ht_ft_x = x_ft * Hx
-        x_ht_ft_y = x_ft * Hy
-
-        # Multiply relevant Fourier modes with weights
-        out_ft = torch.zeros_like(x_ft)
-        # For x-component (using weights1)
-        out_ft[:, :, :self.modes1, :self.modes2] += self.compl_mul2d(
-            x_ht_ft_x[:, :, :self.modes1, :self.modes2], self.weights1
-        )
-        out_ft[:, :, -self.modes1:, :self.modes2] += self.compl_mul2d(
-            x_ht_ft_x[:, :, -self.modes1:, :self.modes2], self.weights2
-        )
-        # For y-component (using weights1)
-        out_ft[:, :, :self.modes1, :self.modes2] += self.compl_mul2d(
-            x_ht_ft_y[:, :, :self.modes1, :self.modes2], self.weights1
-        )
-        out_ft[:, :, -self.modes1:, :self.modes2] += self.compl_mul2d(
-            x_ht_ft_y[:, :, -self.modes1:, :self.modes2], self.weights2
-        )
-        
-        # Apply the inverse Riesz transform multipliers
-        H_inv_x = 1j * (omega_x / omega_mag)  # Inverse Riesz multiplier for x
-        H_inv_y = 1j * (omega_y / omega_mag)  # Inverse Riesz multiplier for y
-        out_ft = out_ft * H_inv_x + out_ft * H_inv_y  # Apply inverse Riesz Transform
-
-        # Return to the spatial domain
-        x = torch.fft.ifft2(out_ft).real  # Take the real part
-        return x
-        
+        Hilbert Transformation Kernel in 2D.
         """
         batchsize = x.shape[0]
         N1, N2 = x.size(-2), x.size(-1)  # Dimensions along each axis

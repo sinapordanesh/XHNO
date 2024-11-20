@@ -23,16 +23,16 @@ np.random.seed(0)
 
 
 ################################################################
-#  1d fourier layer
+#  1d Hilbert layer
 ################################################################
 class SpectralConv1d(nn.Module):
     def __init__(self, in_channels, out_channels, modes1):
         super(SpectralConv1d, self).__init__()
-
+        
         """
-        1D Hilbert layer. 
+        Hilbert Transformation Kernel in 1D.
         """
-
+        
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.modes1 = modes1  #Number of Fourier modes to multiply, at most floor(N/2) + 1
@@ -47,36 +47,7 @@ class SpectralConv1d(nn.Module):
 
     def forward(self, x):
         """
-        Explanation:
-        
-        We will modify the forward method to replace the Fourier transform operations with Hilbert transform operations. The Hilbert transform can be computed in the frequency domain by multiplying the Fourier transform of the signal by -i * sign(ω), where ω represents the frequency components.
-
-        Compute the Fourier Transform:
-
-        We compute the full Fourier transform of the input x using torch.fft.fft.
-        x_ft now contains the frequency components of x.
-        
-        Create the Hilbert Transform Multiplier:
-
-        freqs are the frequency bins corresponding to each element in x_ft.
-        H is the Hilbert transform multiplier defined as -1j * sign(ω).
-        We reshape H to match the dimensions of x_ft for broadcasting during multiplication.
-        
-        Apply the Hilbert Transform:
-
-        Multiply x_ft by H to get the frequency components of the Hilbert-transformed signal.
-        
-        Multiply with Weights:
-
-        We only consider the first self.modes1 frequency modes for efficiency.
-        self.compl_mul1d performs the complex multiplication between the transformed signal and the weights.
-        out_ft stores the result in the frequency domain.
-        
-        Inverse Fourier Transform:
-
-        We apply the inverse Fourier transform using torch.fft.ifft to get back to the spatial domain.
-        
-        Since the result may be complex due to numerical errors, we take the real part using .real.
+            Hilbert transform convolution
         """
         
         batchsize = x.shape[0]
@@ -288,3 +259,4 @@ with torch.no_grad():
         index = index + 1
 
 # scipy.io.savemat('pred/burger_test.mat', mdict={'pred': pred.cpu().numpy()})
+
