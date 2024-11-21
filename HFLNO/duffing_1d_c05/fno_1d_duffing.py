@@ -147,16 +147,19 @@ class FNO1d(nn.Module):
         x2 = self.conv0(x)
         x3 = self.w0(x)
         x = x2 + x3
+        x = torch.sin(x)
         
         # Layer 2
         x2 = self.conv1(x)
         x3 = self.w1(x)
         x = x2 + x3
+        x = torch.sin(x)
         
         # Layer 3
         x2 = self.conv2(x)
         x3 = self.w2(x)
         x = x2 + x3
+        x = torch.sin(x)
         
         # Layer 4
         x2 = self.conv3(x)

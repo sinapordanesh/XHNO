@@ -30,6 +30,8 @@ parser.add_argument("--data_path", help="Path to the data file.", type=str, requ
 parser.add_argument("--s", type=int, help="s", default=2048)
 parser.add_argument("--batch_size_train", type=int, help="batch_size_train", default=20)
 parser.add_argument("--batch_size_vali", type=int, help="batch_size_vali", default=20)
+parser.add_argument("--batch_size_test", type=int, help="batch_size_test", default=100)
+
 parser.add_argument("--learning_rate", type=float, help="learning_rate", default=0.002)
 parser.add_argument("--epochs", type=int, help="epochs", default=1000)
 parser.add_argument("--step_size", type=int, help="step_size", default=100)
@@ -53,6 +55,7 @@ s = args.s
 
 batch_size_train = args.batch_size_train
 batch_size_vali = args.batch_size_vali
+batch_size_test = args.batch_size_test
 
 learning_rate = args.learning_rate
 epochs = args.epochs
@@ -77,17 +80,17 @@ if not os.path.exists(save_results_to):
 
 
 # ====================================
-#  Fourier layer
+#  Hilbert layer
 # ====================================
 
 class SpectralConv1d(nn.Module):
     def __init__(self, in_channels, out_channels, modes1):
         super(SpectralConv1d, self).__init__()
-
+        
         """
-        1D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
+        Hilbert Transformation Kernel in 1D.
         """
-
+        
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.modes1 = modes1  #Number of Fourier modes to multiply, at most floor(N/2) + 1
@@ -97,31 +100,55 @@ class SpectralConv1d(nn.Module):
 
     # Complex multiplication
     def compl_mul1d(self, input, weights):
-        # (batch, in_channel, x ), (in_channel, out_channel, x) -> (batch, out_channel, x)
+        # (batch, out_channel, :mode ), (in_channel, out_channel, modes) -> (batch, out_channel, x)
         return torch.einsum("bix,iox->box", input, weights)
 
     def forward(self, x):
+        """
+            Hilbert transform convolution
+        """
+        
         batchsize = x.shape[0]
-        #Compute Fourier coeffcients up to factor of e^(- something constant)
-        x_ft = torch.fft.rfft(x)
-
-        # Multiply relevant Fourier modes
-        out_ft = torch.zeros(batchsize, self.out_channels, x.size(-1)//2 + 1,  device=x.device, dtype=torch.cfloat)
-        out_ft[:, :, :self.modes1] = self.compl_mul1d(x_ft[:, :, :self.modes1], self.weights1)
-
-        #Return to physical space
-        x = torch.fft.irfft(out_ft, n=x.size(-1))
+        N = x.size(-1)
+        
+        # Compute the Fourier transform of the input
+        x_ft = torch.fft.fft(x, n = N)
+        
+        # Create the Hilbert transform multiplier
+        freqs = torch.fft.fftfreq(N).to(x.device)   # Frequency components
+        H = -1j * torch.sign(freqs)                 # Hilbert multiplier: -i * sign(ω)
+        H = H.reshape(1, 1, N)                      # Reshape for broadcasting
+        
+        # Apply the Hilbert transform in the frequency domain
+        x_ht_ft = x_ft * H                           # Element-wise multiplication
+        
+        # Multiply relevant frequency modes with weights
+        out_ft = torch.zeros(
+            batchsize, self.out_channels, N, device=x.device, dtype=torch.cfloat
+        )
+        out_ft[:, :, : self.modes1] = self.compl_mul1d(
+            x_ht_ft[:, :, : self.modes1], self.weights1
+        )
+        
+        # Apply the inverse Hilbert transform multiplier
+        H_inv = 1j * torch.sign(freqs)              # Inverse Hilbert multiplier: +i * sign(ω)
+        H_inv = H_inv.reshape(1, 1, N)              # Reshape for broadcasting
+        out_ft = out_ft * H_inv                      # Apply inverse Hilbert Transform
+                
+        # Return to the spatial domain
+        x = torch.fft.ifft(out_ft, n=N).real          # Take the real part
         return x
 
-class FNO1d(nn.Module):
+
+class HNO1d(nn.Module):
     def __init__(self, width,modes):
-        super(FNO1d, self).__init__()
+        super(HNO1d, self).__init__()
 
         self.width = width
         self.modes1 = modes
         self.fc0 = nn.Linear(1, self.width) 
 
-        # Fourier layer
+        # Hilbert layer
         self.conv0 = SpectralConv1d(self.width, self.width, self.modes1)
         self.w0 = nn.Conv1d(self.width, self.width, 1)
         
@@ -138,8 +165,8 @@ class FNO1d(nn.Module):
         self.fc2 = nn.Linear(128, 1)
 
     def forward(self,x):
-        #grid = self.get_grid(x.shape, x.device)
-        #x = torch.cat((x, grid), dim=-1)
+        grid = self.get_grid(x.shape, x.device)
+        x = torch.cat((x, grid), dim=-1)
         x = self.fc0(x)
         x = x.permute(0, 2, 1)
 
@@ -160,7 +187,7 @@ class FNO1d(nn.Module):
         x3 = self.w2(x)
         x = x2 + x3
         x = torch.sin(x)
-        
+
         # Layer 4
         x2 = self.conv3(x)
         x3 = self.w3(x)
@@ -215,7 +242,7 @@ train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_trai
 vali_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_vali, y_vali), batch_size=batch_size_vali, shuffle=True)
 
 # model
-model = FNO1d(width,modes).cuda()
+model = HNO1d(width,modes).cuda()
 
 
 # ====================================
@@ -303,7 +330,7 @@ pred = torch.zeros(y_test.shape)
 index = 0
 test_l2 = 0.0
 test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_test, y_test),
-                                          batch_size=1, shuffle=False)
+                                          batch_size=batch_size_test, shuffle=False)
 
 with torch.no_grad():
     for x, y in test_loader:

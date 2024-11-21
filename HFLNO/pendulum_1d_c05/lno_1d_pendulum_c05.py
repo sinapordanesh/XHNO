@@ -1,11 +1,10 @@
 '''
 Module Description:
 ------
-This module implements the Fourier Neural Operator for duffing oscillator with damping c=0.5 (Example 1 in XNO paper) 
-
+This module implements the Laplace Neural Operator for duffing oscillator with damping c=0.5 (Example 2 in LNO paper)
 Author: 
 ------
-Saman Pordanesh (saman.pordanesh@ucalgary.ca)
+Qianying Cao (qianying_cao@brown.edu)
 '''
 
 import torch
@@ -37,9 +36,6 @@ parser.add_argument("--gamma", type=float, help="gamma", default=0.5)
 parser.add_argument("--modes", type=int, help="modes", default=16)
 parser.add_argument("--width", type=int, help="width", default=4)
 
-# ====================================
-#  Argument Parsing
-# ====================================
 
 args = parser.parse_args()
 
@@ -48,7 +44,7 @@ data_path = args.data_path
 
 # ====================================
 #  Define parameters from Arguments (Mostly by Default)
-
+# ====================================
 s = args.s
 
 batch_size_train = args.batch_size_train
@@ -62,6 +58,7 @@ gamma = args.gamma
 modes = args.modes
 width = args.width
 
+
 # ====================================
 # saving settings
 # ====================================
@@ -70,105 +67,99 @@ current_directory = os.getcwd()
 case = f"Case_{case}"
 folder_index = str(save_index)
 
-results_dir = "/" + case + folder_index + "/"
+results_dir = "/" + case + folder_index +"/"
 save_results_to = current_directory + results_dir
 if not os.path.exists(save_results_to):
     os.makedirs(save_results_to)
 
-
 # ====================================
-#  Fourier layer
+#  Laplace layer: pole-residue operation is used to calculate the poles and residues of the output
 # ====================================
-
-class SpectralConv1d(nn.Module):
+class PR(nn.Module):
     def __init__(self, in_channels, out_channels, modes1):
-        super(SpectralConv1d, self).__init__()
+        super(PR, self).__init__()
 
-        """
-        1D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
-        """
-
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.modes1 = modes1  #Number of Fourier modes to multiply, at most floor(N/2) + 1
-
+        self.modes1 = modes1
         self.scale = (1 / (in_channels*out_channels))
-        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, dtype=torch.cfloat))
-
-    # Complex multiplication
-    def compl_mul1d(self, input, weights):
-        # (batch, in_channel, x ), (in_channel, out_channel, x) -> (batch, out_channel, x)
-        return torch.einsum("bix,iox->box", input, weights)
+        self.weights_pole = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, dtype=torch.cfloat))
+        self.weights_residue = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, dtype=torch.cfloat))
+   
+    def output_PR(self, lambda1,alpha, weights_pole, weights_residue):   
+        Hw=torch.zeros(weights_residue.shape[0],weights_residue.shape[0],weights_residue.shape[2],lambda1.shape[0], device=alpha.device, dtype=torch.cfloat)
+        term1=torch.div(1,torch.sub(lambda1,weights_pole))
+        Hw=weights_residue*term1
+        Pk=-Hw  # for ode, Pk equals to negative Hw
+        output_residue1=torch.einsum("bix,xiok->box", alpha, Hw) 
+        output_residue2=torch.einsum("bix,xiok->bok", alpha, Pk) 
+        return output_residue1,output_residue2    
+    
 
     def forward(self, x):
-        batchsize = x.shape[0]
-        #Compute Fourier coeffcients up to factor of e^(- something constant)
-        x_ft = torch.fft.rfft(x)
+        t=grid_x_train.cuda()
+        #Compute input poles and resudes by FFT
+        dt=(t[1]-t[0]).item()
+        alpha = torch.fft.fft(x)
+        lambda0=torch.fft.fftfreq(t.shape[0], dt)*2*np.pi*1j
+        lambda1=lambda0.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+        lambda1=lambda1.cuda()
+        start=time.time()
 
-        # Multiply relevant Fourier modes
-        out_ft = torch.zeros(batchsize, self.out_channels, x.size(-1)//2 + 1,  device=x.device, dtype=torch.cfloat)
-        out_ft[:, :, :self.modes1] = self.compl_mul1d(x_ft[:, :, :self.modes1], self.weights1)
+        # Obtain output poles and residues for transient part and steady-state part
+        output_residue1,output_residue2= self.output_PR(lambda1, alpha, self.weights_pole, self.weights_residue)
 
-        #Return to physical space
-        x = torch.fft.irfft(out_ft, n=x.size(-1))
-        return x
+        # Obtain time histories of transient response and steady-state response
+        x1 = torch.fft.ifft(output_residue1, n=x.size(-1))
+        x1 = torch.real(x1)
+        x2=torch.zeros(output_residue2.shape[0],output_residue2.shape[1],t.shape[0], device=alpha.device, dtype=torch.cfloat)    
+        term1=torch.einsum("bix,kz->bixz", self.weights_pole, t.type(torch.complex64).reshape(1,-1))
+        term2=torch.exp(term1) 
+        x2=torch.einsum("bix,ioxz->boz", output_residue2,term2)
+        x2=torch.real(x2)
+        x2=x2/x.size(-1)
+        return x1+x2
 
-class FNO1d(nn.Module):
+class LNO1d(nn.Module):
     def __init__(self, width,modes):
-        super(FNO1d, self).__init__()
+        super(LNO1d, self).__init__()
 
         self.width = width
         self.modes1 = modes
-        self.fc0 = nn.Linear(1, self.width) 
+        self.fc0 = nn.Linear(2, self.width) 
 
-        # Fourier layer
-        self.conv0 = SpectralConv1d(self.width, self.width, self.modes1)
+        self.conv0 = PR(self.width, self.width, self.modes1)
         self.w0 = nn.Conv1d(self.width, self.width, 1)
-        
-        self.conv1 = SpectralConv1d(self.width, self.width, self.modes1)
-        self.w1 = nn.Conv1d(self.width, self.width, 1)
-        
-        self.conv2 = SpectralConv1d(self.width, self.width, self.modes1)
-        self.w2 = nn.Conv1d(self.width, self.width, 1)
-        
-        self.conv3 = SpectralConv1d(self.width, self.width, self.modes1)
-        self.w3 = nn.Conv1d(self.width, self.width, 1)
 
         self.fc1 = nn.Linear(self.width, 128)
         self.fc2 = nn.Linear(128, 1)
 
     def forward(self,x):
-        #grid = self.get_grid(x.shape, x.device)
-        #x = torch.cat((x, grid), dim=-1)
+        grid = self.get_grid(x.shape, x.device)
+        x = torch.cat((x, grid), dim=-1)
         x = self.fc0(x)
         x = x.permute(0, 2, 1)
 
-        # Layer 1
-        x2 = self.conv0(x)
-        x3 = self.w0(x)
-        x = x2 + x3
-        x = torch.sin(x)
-        
-        # Layer 2
-        x2 = self.conv1(x)
-        x3 = self.w1(x)
-        x = x2 + x3
-        x = torch.sin(x)
-        
-        # Layer 3
-        x2 = self.conv2(x)
-        x3 = self.w2(x)
-        x = x2 + x3
-        x = torch.sin(x)
-        
-        # Layer 4
-        x2 = self.conv3(x)
-        x3 = self.w3(x)
-        x = x2 + x3
+        x1 = self.conv0(x)
+        x2 = self.w0(x)
+        x = x1 +x2
+        # x = torch.sin(x)
+
+        # x1 = self.conv1(t,x)
+        # x2 = self.w1(x)
+        # x = x1 + x2
+        # x = torch.sin(x)
+
+        # x1 = self.conv2(t,x)
+        # x2 = self.w2(x)
+        # x = x1 + x2
+        # x = torch.sin(x)
+
+        # x1 = self.conv3(t,x)
+        # x2 = self.w3(x)
+        # x = x1 + x2
 
         x = x.permute(0, 2, 1)
         x = self.fc1(x)
-        x = torch.sin(x)
+        x =  torch.sin(x)
         x = self.fc2(x)
         return x
 
@@ -181,17 +172,19 @@ class FNO1d(nn.Module):
 # ====================================
 #  Define parameters and Load data
 # ====================================
+     
 # s = 2048
 
-# batch_size_train = 20
-# batch_size_vali = 20
+# batch_size_train = 40
+# batch_size_vali = 40
+
 
 # learning_rate = 0.002
-# epochs = 1000
+# epochs = 1200
 # step_size = 100
 # gamma = 0.5
 
-# modes = 16
+# modes = 8
 # width = 4
 
 reader = MatReader(f"{data_path}")
@@ -215,7 +208,7 @@ train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_trai
 vali_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_vali, y_vali), batch_size=batch_size_vali, shuffle=True)
 
 # model
-model = FNO1d(width,modes).cuda()
+model = LNO1d(width,modes).cuda()
 
 
 # ====================================
@@ -297,7 +290,7 @@ if not os.path.exists(save_models_to):
 torch.save(model, save_models_to+'Wave_states')
 
 # ====================================
-# testing
+# saving settings
 # ====================================
 pred = torch.zeros(y_test.shape)
 index = 0
@@ -321,7 +314,8 @@ scipy.io.savemat(save_results_to+'wave_states_test.mat',
                             'y_test': y_test.numpy(), 
                             'y_pred': pred.cpu().numpy()})  
     
-        
+
+
     
 print("\n=============================")
 print('Testing error: %.3e'%(test_l2))

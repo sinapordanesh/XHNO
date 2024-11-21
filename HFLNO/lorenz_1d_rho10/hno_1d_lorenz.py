@@ -151,7 +151,16 @@ class HNO1d(nn.Module):
         # Hilbert layer
         self.conv0 = SpectralConv1d(self.width, self.width, self.modes1)
         self.w0 = nn.Conv1d(self.width, self.width, 1)
-
+        
+        self.conv1 = SpectralConv1d(self.width, self.width, self.modes1)
+        self.w1 = nn.Conv1d(self.width, self.width, 1)
+        
+        self.conv2 = SpectralConv1d(self.width, self.width, self.modes1)
+        self.w2 = nn.Conv1d(self.width, self.width, 1)
+        
+        self.conv3 = SpectralConv1d(self.width, self.width, self.modes1)
+        self.w3 = nn.Conv1d(self.width, self.width, 1)
+        
         self.fc1 = nn.Linear(self.width, 128)
         self.fc2 = nn.Linear(128, 1)
 
@@ -164,6 +173,24 @@ class HNO1d(nn.Module):
         # Layer 1
         x2 = self.conv0(x)
         x3 = self.w0(x)
+        x = x2 + x3
+        x = torch.tanh(x)
+        
+        # Layer 2
+        x2 = self.conv1(x)
+        x3 = self.w1(x)
+        x = x2 + x3
+        x = torch.tanh(x)
+        
+        # Layer 3
+        x2 = self.conv2(x)
+        x3 = self.w2(x)
+        x = x2 + x3
+        x = torch.tanh(x)
+        
+        # Layer 4
+        x2 = self.conv3(x)
+        x3 = self.w3(x)
         x = x2 + x3
 
         x = x.permute(0, 2, 1)
