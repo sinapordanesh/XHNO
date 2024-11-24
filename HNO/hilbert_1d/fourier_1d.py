@@ -98,6 +98,7 @@ class FNO1d(nn.Module):
         x = self.fc0(x)
         x = x.permute(0, 2, 1)
         # x = F.pad(x, [0,self.padding]) # pad the domain if input is non-periodic
+        import pdb; pdb.set_trace()
 
         x1 = self.conv0(x)
         x2 = self.w0(x)
@@ -157,7 +158,7 @@ width = 64
 ################################################################
 
 # Data is of the shape (number of samples, grid size)
-dataloader = MatReader('data/schrodinger_data_1d.mat')
+dataloader = MatReader('data/burgers_data_R10.mat')
 x_data = dataloader.read_field('a')[:,::sub]
 y_data = dataloader.read_field('u')[:,::sub]
 

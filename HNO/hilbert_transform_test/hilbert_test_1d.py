@@ -12,7 +12,7 @@ def hilbert_transform_torch(x):
     """
     N = x.size(-1)
     x_ft = torch.fft.fft(x, n=N)
-    freqs = torch.fft.fftfreq(N).to(x.device)
+    freqs = torch.fft.fftfreq(N).to(x.device) # dt 
     H = -1j * torch.sign(freqs)
     H = H.reshape(1, 1, N)
     x_ht_ft = x_ft * H
