@@ -77,7 +77,7 @@ def hilbert_kernel_1d_1(self, x):
     
     # Multiply relevant Fourier modes
     out_ht_ft = torch.zeros(batchsize, self.out_channels, x.size(-1)//2 + 1,  device=x.device, dtype=torch.cfloat)
-    out_ht_ft[:, :, :self.modes1] = compl_mul1d(x_ht_ft[:, :, :self.modes1], self.weights1)
+    out_ht_ft[:, :, :self.modes1] = self.compl_mul1d(x_ht_ft[:, :, :self.modes1], self.weights1)
     
     # Return to time domain space
     out_ht = torch.fft.irfft(out_ht_ft, n=x.size(-1))
@@ -102,8 +102,8 @@ def hilbert_kernel_1d_2(self, x):
 
     # Multiply relevant modes
     out_ht_ft = torch.zeros(batchsize, self.out_channels,  x.size(-2), x.size(-1)//2 + 1, dtype=torch.cfloat, device=x.device)
-    out_ht_ft[:, :, :self.modes1, :self.modes2] = compl_mul2d(x_ht_ft[:, :, :self.modes1, :self.modes2], self.weights1)
-    out_ht_ft[:, :, -self.modes1:, :self.modes2] = compl_mul2d(x_ht_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
+    out_ht_ft[:, :, :self.modes1, :self.modes2] = self.compl_mul2d(x_ht_ft[:, :, :self.modes1, :self.modes2], self.weights1)
+    out_ht_ft[:, :, -self.modes1:, :self.modes2] = self.compl_mul2d(x_ht_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
     
     # Return to physical space
     out_ht = torch.fft.irfft2(out_ht_ft, s=(x.size(-2), x.size(-1)))

@@ -17,6 +17,7 @@ from timeit import default_timer
 from utilities3 import *
 
 from Adam import Adam
+from hilbert import hilbert
 
 torch.manual_seed(0)
 np.random.seed(0)
@@ -45,120 +46,23 @@ class SpectralConv1d(nn.Module):
         # (batch, out_channel, :mode ), (in_channel, out_channel, modes) -> (batch, out_channel, x)
         return torch.einsum("bix,iox->box", input, weights)
     
-    def hilbert():
-        "hilbert transform "
-        
-        N = x.size(-1)
-        x_ft = torch.fft.fft(x, n=N)
-        freqs = torch.fft.fftfreq(N).to(x.device) # dt 
-        H = -1j * torch.sign(freqs)
-        H = H.reshape(1, 1, N)
-        x_ht_ft = x_ft * H
-        x_ht = torch.fft.ifft(x_ht_ft, n=N)
-        return x_ht
-
-    def inverse_hilbert(x):
         
         
     def forward(self, x):
-        """
-            Hilbert transform convolution
-        """
-        
         batchsize = x.shape[0]
-        N = x.size(-1)
-        
-        # Compute the Fourier transform of the input
-        x_ft = torch.fft.fft(x, n = N)
-        
-        # Create the Hilbert transform multiplier
-        freqs = torch.fft.fftfreq(N).to(x.device)   # Frequency components
-        H = -1j * torch.sign(freqs)                 # Hilbert multiplier: -i * sign(ω)
-        H = H.reshape(1, 1, N)                      # Reshape for broadcasting
-        
-        # Apply the Hilbert transform in the frequency domain
-        x_ht_ft = x_ft * H                           # Element-wise multiplication
-        
-        """
-        -------------------------------------------
-        Idea 0: Follows the idea of FNO and LNO, that an integral transforming time domain, is calculated by hilbert and inverse hilbert.
-        
+        # Compute the Analyctical Signal of the input x, then compute the Fourier coeffcients
         x_ht = hilbert(x).imag
-        x_ht_ft = torch.fft.rfft(x_ht) # (fft is another option here)
-        out_ht_ft[:, :, :self.modes1] = compl_mul1d(x_ht_ft[:, :, :self.modes1], self.weights1)
-        out_ht = torch.fft.irfft(out_ht_ft, n=x.size(-1))
+        x_ht_ft = torch.fft.rfft(x_ht)
         
+        # Multiply relevant Fourier modes
+        out_ht_ft = torch.zeros(batchsize, self.out_channels, x.size(-1)//2 + 1,  device=x.device, dtype=torch.cfloat)
+        out_ht_ft[:, :, :self.modes1] = self.compl_mul1d(x_ht_ft[:, :, :self.modes1], self.weights1)
+        
+        # Return to time domain space
+        out_ht = torch.fft.irfft(out_ht_ft, n=x.size(-1))
+        # Return to physical space
         x = -hilbert(out_ht).imag
         
-        return x
-        
-        
-        -------------------------------------------
-        Idea 1: transform input to its hilbert transform multiply by weight, then inverse of the hilbert
-        
-        x_ht = hilbert(x).imag
-        out_ht = compl_mul1d(x_ht, weights)
-        
-        return -hilbert(out_ht).imag
-        
-        -------------------------------------------
-        Idea 2: Transform input to its analytic signal multiply analytic signal by a weight then inverse of analytic signal transformation.
-        
-        x_ht_analytic = hilbert(x) # this function calculates analytic signals: x+iH(x)
-        
-        out_ht_analytic = compl_mul1d(x_ht_analytic, weights)
-        return out_ht_analytic.real
-        
-        -------------------------------------------
-        Idea 3: Fourier of Hilbert transform of the signal, take modes, multiply with weights and inverse fourier on the result. 
-        
-        x_ht = hilbert(x).imag
-        x_ft_ht = torch.fft.rfft(x_ht)
-    
-        # Multiply relevant Fourier modes
-        out_ft = torch.zeros(batchsize, self.out_channels, x.size(-1)//2 + 1,  device=x.device, dtype=torch.cfloat)
-        out_ft[:, :, :self.modes1] = self.compl_mul1d(x_ft[:, :, :self.modes1], self.weights1)
-
-        #Return to physical space
-        x = torch.fft.irfft(out_ft, n=x.size(-1))
-        return x
-        
-        -------------------------------------------
-        Idea 4: Fourier of Analytic signal of the signal, take modes, multiply with weights and inverse fourier on the result.
-        
-        x_ht = hilbert(x)
-        x_ft_ht = torch.fft.fft(x_ht)
-    
-        # Multiply relevant Fourier modes
-        out_ft = torch.zeros(batchsize, self.out_channels, x.size(-1)//2 + 1,  device=x.device, dtype=torch.cfloat)
-        out_ft[:, :, :self.modes1] = self.compl_mul1d(x_ft[:, :, :self.modes1], self.weights1)
-
-        #Return to physical space
-        x = torch.fft.ifft(out_ft, n=x.size(-1))
-        return x.real
-        
-       
-        
-        
-        # we need to make inverse of hilber
-        
-        """
-        
-        # Multiply relevant frequency modes with weights
-        out_ft = torch.zeros(
-            batchsize, self.out_channels, N, device=x.device, dtype=torch.cfloat
-        )
-        out_ft[:, :, : self.modes1] = self.compl_mul1d(
-            x_ht_ft[:, :, : self.modes1], self.weights1
-        )
-        
-        # # Apply the inverse Hilbert transform multiplier
-        # H_inv = 1j * torch.sign(freqs)              # Inverse Hilbert multiplier: +i * sign(ω)
-        # H_inv = H_inv.reshape(1, 1, N)              # Reshape for broadcasting
-        # out_ft = out_ft * H_inv                      # Apply inverse Hilbert Transform
-                
-        # Return to the spatial domain
-        x = torch.fft.ifft(out_ft, n=N).real          # Take the real part
         return x
 
 class FNO1d(nn.Module):

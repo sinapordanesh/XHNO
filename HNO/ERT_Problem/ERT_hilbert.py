@@ -52,6 +52,26 @@ np.random.seed(0)
 import torch.nn.functional as F
 from timeit import default_timer
 from utilities3 import *
+from hilbert import hilbert, hilbert2 # ADDED
+import argparse             # ADDED
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument("--fn", help="File Name for saving prediction and model files.", type=str, required=True)
+parser.add_argument("--train", help="Train dataset file path.", type=str, required=True)
+parser.add_argument("--test", help="Test dataset file path.", type=str, required=True)
+parser.add_argument("--eval", help="Evaluation dataset file path.", type=str, required=True)
+parser.add_argument("--ts", help="Train size of the training dataset", type=int, required=True)
+
+
+args = parser.parse_args()
+
+pfn = args.fn
+train_path = args.train
+test_path = args.test
+eval_path = args.eval
+train_size = args.ts
+
 
 torch.manual_seed(0)
 np.random.seed(0)
@@ -87,107 +107,21 @@ class SpectralConv2d(nn.Module):
 
     def forward(self, x):
         
-        """
         batchsize = x.shape[0]
-        # Compute the Fourier transform of the input
-        x_ft = torch.fft.fft2(x)
-        batchsize, in_channels, Nx, Ny = x_ft.shape
 
-        # Compute frequency grids
-        freq_x = torch.fft.fftfreq(Nx, d=1.0).to(x.device)
-        freq_y = torch.fft.fftfreq(Ny, d=1.0).to(x.device)
-        omega_x, omega_y = torch.meshgrid(freq_x, freq_y, indexing='ij')
-        omega_x = omega_x.unsqueeze(0).unsqueeze(0)  # Shape: (1, 1, Nx, Ny)
-        omega_y = omega_y.unsqueeze(0).unsqueeze(0)  # Shape: (1, 1, Nx, Ny)
+        # Compute the Analyctical Signal of the input x, then compute the Fourier coeffcients
+        x_ht = hilbert2(x).imag
+        x_ht_ft = torch.fft.rfft2(x_ht)
 
-        # Compute the magnitude of omega
-        epsilon = 1e-8  # Small number to avoid division by zero
-        omega_mag = torch.sqrt(omega_x ** 2 + omega_y ** 2 + epsilon)
-
-        # Compute the Riesz transform multipliers
-        Hx = -1j * (omega_x / omega_mag)
-        Hy = -1j * (omega_y / omega_mag)
-
-        # Apply the Riesz transform in the frequency domain
-        x_ht_ft_x = x_ft * Hx
-        x_ht_ft_y = x_ft * Hy
-
-        # Multiply relevant Fourier modes with weights
-        out_ft = torch.zeros_like(x_ft)
-        # For x-component (using weights1)
-        out_ft[:, :, :self.modes1, :self.modes2] += self.compl_mul2d(
-            x_ht_ft_x[:, :, :self.modes1, :self.modes2], self.weights1
-        )
-        out_ft[:, :, -self.modes1:, :self.modes2] += self.compl_mul2d(
-            x_ht_ft_x[:, :, -self.modes1:, :self.modes2], self.weights2
-        )
-        # For y-component (using weights1)
-        out_ft[:, :, :self.modes1, :self.modes2] += self.compl_mul2d(
-            x_ht_ft_y[:, :, :self.modes1, :self.modes2], self.weights1
-        )
-        out_ft[:, :, -self.modes1:, :self.modes2] += self.compl_mul2d(
-            x_ht_ft_y[:, :, -self.modes1:, :self.modes2], self.weights2
-        )
+        # Multiply relevant modes
+        out_ht_ft = torch.zeros(batchsize, self.out_channels,  x.size(-2), x.size(-1)//2 + 1, dtype=torch.cfloat, device=x.device)
+        out_ht_ft[:, :, :self.modes1, :self.modes2] = self.compl_mul2d(x_ht_ft[:, :, :self.modes1, :self.modes2], self.weights1)
+        out_ht_ft[:, :, -self.modes1:, :self.modes2] = self.compl_mul2d(x_ht_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
         
-        # Apply the inverse Riesz transform multipliers
-        H_inv_x = 1j * (omega_x / omega_mag)  # Inverse Riesz multiplier for x
-        H_inv_y = 1j * (omega_y / omega_mag)  # Inverse Riesz multiplier for y
-        out_ft = out_ft * H_inv_x + out_ft * H_inv_y  # Apply inverse Riesz Transform
+        # Return to physical space
+        out_ht = torch.fft.irfft2(out_ht_ft, s=(x.size(-2), x.size(-1)))
+        x = -hilbert2(out_ht).imag
 
-        # Return to the spatial domain
-        x = torch.fft.ifft2(out_ft).real  # Take the real part
-        return x
-        
-        """
-        batchsize = x.shape[0]
-        N1, N2 = x.size(-2), x.size(-1)  # Dimensions along each axis
-
-        # Compute the 2D Fourier transform of the input
-        x_ft = torch.fft.fft2(x, s=(N1, N2))
-
-        # Create the Hilbert transform multipliers along each axis
-        freqs1 = torch.fft.fftfreq(N1).to(x.device)  # Frequency components along axis 1 (rows)
-        freqs2 = torch.fft.fftfreq(N2).to(x.device)  # Frequency components along axis 2 (columns)
-
-        H1 = -1j * torch.sign(freqs1)  # Hilbert multiplier along axis 1
-        H2 = -1j * torch.sign(freqs2)  # Hilbert multiplier along axis 2
-
-        # Reshape for broadcasting
-        H1 = H1.reshape(1, 1, N1, 1)
-        H2 = H2.reshape(1, 1, 1, N2)
-
-        # Apply the Hilbert transform along each axis separately
-        x_ht_ft_1 = x_ft * H1  # Hilbert Transform along axis 1
-        x_ht_ft_2 = x_ft * H2  # Hilbert Transform along axis 2
-
-        # Combine the transformed components (you can choose to sum or process separately)
-        x_ht_ft = x_ht_ft_1 + x_ht_ft_2
-
-        # Initialize out_ft with zeros
-        out_ft = torch.zeros(
-            batchsize, self.out_channels, N1, N2, device=x.device, dtype=torch.cfloat
-        )
-
-        # Multiply relevant Fourier modes with weights for positive frequencies
-        out_ft[:, :, :self.modes1, :self.modes2] = self.compl_mul2d(
-            x_ht_ft[:, :, :self.modes1, :self.modes2], self.weights1
-        )
-
-        # Multiply relevant Fourier modes with weights for negative frequencies
-        out_ft[:, :, -self.modes1:, :self.modes2] = self.compl_mul2d(
-            x_ht_ft[:, :, -self.modes1:, :self.modes2], self.weights2
-        )
-
-        # Apply the inverse Hilbert transform multipliers along each axis
-        H_inv1 = 1j * torch.sign(freqs1).reshape(1, 1, N1, 1)  # Inverse along axis 1
-        H_inv2 = 1j * torch.sign(freqs2).reshape(1, 1, 1, N2)  # Inverse along axis 2
-
-        # Apply the inverse Hilbert transform along each axis
-        out_ft = out_ft * H_inv1
-        out_ft = out_ft * H_inv2
-
-        # Return to the spatial domain
-        x = torch.fft.ifft2(out_ft, s=(N1, N2)).real  # Take the real part
         return x
         
 class MLP(nn.Module):
@@ -296,13 +230,13 @@ class FNO2d(nn.Module):
 ################################################################
 # TRAIN_PATH = 'data/trainingK.mat'
 # TEST_PATH = 'data/testK.mat'
-TRAIN_PATH = 'data/s2/trainingV.mat'
-TEST_PATH = 'data/s2/testV.mat'
-NEW_TEST_PATH = 'data/s2/evalV.mat'
+TRAIN_PATH = train_path
+TEST_PATH = test_path
+NEW_TEST_PATH = eval_path
 
 
 
-ntrain = 80000
+ntrain = train_size
 ntest = 100
 nval = 100
 batch_size = 50
@@ -514,7 +448,7 @@ for ep in range(epochs):
         best_loss = test_l2
         counter = 0
         # Save the model 
-        torch.save(model.state_dict(), 'best_modelV1.pth')
+        torch.save(model.state_dict(), f"best_model_{pfn}.pth")
     else:
         counter +=1
 
@@ -564,7 +498,7 @@ for ep in range(epochs):
 
 
 model = FNO2d(modes1=16, modes2=16, width=18)
-model.load_state_dict(torch.load('best_modelV1.pth'))
+model.load_state_dict(torch.load(f"best_model_{pfn}.pth"))
 
 model.to(device)  # Move model to device
 model.eval()
@@ -588,4 +522,4 @@ print(f"Time taken for predictions on new_test.mat: {prediction_time} seconds")
 
 # Save the predicted matrices
 predicted = out_new.cpu().numpy()  # Move tensor to CPU before converting to numpy
-sio.savemat('output/predicted1V_H_s2_2.mat', {'predicted': predicted})
+sio.savemat(f"output/predicted_{pfn}.mat", {'predicted': predicted})
