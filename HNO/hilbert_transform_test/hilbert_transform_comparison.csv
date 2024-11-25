@@ -1,7 +1,0 @@
-Test Case,PyTorch vs Analytical,SciPy vs Analytical,PyTorch vs SciPy
-sin(ωx x) * sin(ωy y),0.0,0.0,0.0
-cos(ωx x) * cos(ωy y),2.0,2.0,0.0
-sin(ωx x + ωy y),1.0,1.0,0.0
-Gaussian Function,N/A,N/A,0.0
-e^{i(ωx x + ωy y)},1.0,N/A,N/A
-sinc(r),N/A,N/A,0.0

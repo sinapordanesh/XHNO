@@ -1,0 +1,1 @@
+python fno_1d_duffing.py --case FNO_Duffing_1d --data_path ../data/1D_Duffing_c0.mat --width 128 --modes 1025 --learning_rate 0.002 > r_fno_duffing_1d_c0.txt 2> errors.txt
