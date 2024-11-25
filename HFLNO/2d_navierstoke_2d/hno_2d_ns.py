@@ -175,7 +175,7 @@ scheduler_gamma = 0.5
 
 print(epochs, learning_rate, scheduler_step, scheduler_gamma)
 
-path = 'Fourier_2D_ns_V1e-3_N2000_T50_N'+str(ntrain)+'_ep' + str(epochs) + '_m' + str(modes) + '_w' + str(width)
+path = 'HNO_2D_ns_V1e-3_N2000_T50_N'+str(ntrain)+'_ep' + str(epochs) + '_m' + str(modes) + '_w' + str(width)
 path_model = 'model/'+path
 path_train_err = 'results/'+path+'train.txt'
 path_test_err = 'results/'+path+'test.txt'
@@ -304,7 +304,7 @@ print("\n=============================")
 print('Testing error: %.3e'%(test_l2))
 print("=============================\n")
 
-scipy.io.savemat('fourier_pred/'+path+'.mat', mdict={'pred': pred.cpu().numpy()})
+scipy.io.savemat('hno_pred/'+path+'.mat', mdict={'pred': pred.cpu().numpy()})
 
 
 
