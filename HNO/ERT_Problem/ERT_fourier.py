@@ -52,6 +52,24 @@ np.random.seed(0)
 import torch.nn.functional as F
 from timeit import default_timer
 from utilities3 import *
+from hilbert import hilbert, hilbert2 # ADDED
+import argparse             # ADDED
+parser = argparse.ArgumentParser()
+
+parser.add_argument("--fn", help="File Name for saving prediction and model files.", type=str, required=True)
+parser.add_argument("--train", help="Train dataset file path.", type=str, required=True)
+parser.add_argument("--test", help="Test dataset file path.", type=str, required=True)
+parser.add_argument("--eval", help="Evaluation dataset file path.", type=str, required=True)
+parser.add_argument("--ts", help="Train size of the training dataset", type=int, required=True)
+
+
+args = parser.parse_args()
+
+pfn = args.fn
+train_path = args.train
+test_path = args.test
+eval_path = args.eval
+train_size = args.ts
 
 torch.manual_seed(0)
 np.random.seed(0)
@@ -207,13 +225,13 @@ class FNO2d(nn.Module):
 ################################################################
 # configs
 ################################################################
-TRAIN_PATH = 'data/s2/trainingV.mat'
-TEST_PATH = 'data/s2/testV.mat'
-NEW_TEST_PATH = 'data/s1/evalK.mat'
+TRAIN_PATH = train_path
+TEST_PATH = test_path
+NEW_TEST_PATH = eval_path
 
 
 
-ntrain = 80000
+ntrain = train_size
 ntest = 100
 nval = 100
 batch_size = 50
@@ -424,7 +442,7 @@ for ep in range(epochs):
         best_loss = test_l2
         counter = 0
         # Save the model 
-        torch.save(model.state_dict(), 'best_modelV1_F.pth')
+        torch.save(model.state_dict(), f'best_model_{pfn}.pth')
     else:
         counter +=1
 
@@ -474,7 +492,7 @@ for ep in range(epochs):
 
 
 model = FNO2d(modes1=16, modes2=16, width=18)
-model.load_state_dict(torch.load('best_modelV1.pth'))
+model.load_state_dict(torch.load(f'best_model_{pfn}.pth'))
 
 model.to(device)  # Move model to device
 model.eval()
@@ -498,4 +516,4 @@ print(f"Time taken for predictions on new_test.mat: {prediction_time} seconds")
 
 # Save the predicted matrices
 predicted = out_new.cpu().numpy()  # Move tensor to CPU before converting to numpy
-sio.savemat('output/predicted1V_F_s2_2.mat', {'predicted': predicted})
+sio.savemat(f'output/predicted_{pfn}.mat', {'predicted': predicted})
