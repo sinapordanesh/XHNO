@@ -170,6 +170,8 @@ class LNO2d(nn.Module):
         self.modes21 = modes21
         self.modes22 = modes22
         
+
+
         # Fourier part
         self.widthF = widthF
         self.modesF1 = modesF1
